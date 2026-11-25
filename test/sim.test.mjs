@@ -75,3 +75,16 @@ test('street cues reflect commerce and lodging without occupying grid cells',()=
   assert.equal(stats(s).lodging.get(inn.id),4);assert.equal(after.spans.length,0);assert.equal(s.buildings.length,buildings);
   assert.ok(after.stops[0].every(v=>v.building!==market.id));
 });
+
+test('progression adds capacity and permanent shops without changing lot footprints',()=>{
+  const s=fresh(1748);s.pop=16;s.wood=34;s.rice=24;
+  assert.ok(place(s,'stall',-4,18));
+  const h=s.buildings[0],lot=cells(h.kind,h.x,h.z,h.rot);
+  for(let i=0;i<3;i++)tick(s);
+  assert.equal(h.tier,2);assert.equal(stats(s).cap,20);assert.deepEqual(cells(h.kind,h.x,h.z,h.rot),lot);assert.ok(s.wood>=14);
+  const t=routeTrial(),stall=t.buildings.find(b=>b.kind==='stall'&&b.z===6);
+  for(let i=0;i<3;i++)tick(t);
+  assert.equal(stall.tier,2);assert.equal(stall.specialty,'tea');assert.ok(t.wood>=14);
+  const dry=routeTrial();assert.ok(road(dry,'road',-5,13,-11,13));for(let i=0;i<3;i++)tick(dry);
+  assert.equal(dry.buildings.find(b=>b.kind==='stall'&&b.z===6).tier,undefined);
+});

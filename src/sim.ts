@@ -10,7 +10,21 @@ export type Tool=keyof typeof specs;
 export type Kind=Exclude<Tool,'road'|'bridge'|'terrace'|'erase'|'plot'>;
 export const isProp=(kind:Kind)=>kind==='lantern'||kind==='garden';
 export function isKind(kind:unknown):kind is Kind{return typeof kind==='string'&&Object.hasOwn(specs,kind)&&!['road','bridge','terrace','erase','plot'].includes(kind);}
-export type Bld={kind:Kind,x:number,z:number,rot:number,id:number,grown?:boolean,style?:number};
+export type Bld={kind:Kind,x:number,z:number,rot:number,id:number,grown?:boolean,style?:number,variant?:number,tier?:2,progress?:number,specialty?:ShopTrade};
+export type ShopTrade='tea'|'rice'|'timber';
+export const variants:Record<Kind,readonly string[]>={
+ home:['Gabled hearth','Deep eaves','Side bay'],rowhouse:['Curtain front','Entry canopy','Lattice front'],
+ farm:['Open paddies','Irrigation beds','Field shelter'],work:['Sawyer’s yard','Carpenter’s shop','Timber store'],
+ market:['Canvas row','Market court','Tiled market hall'],inn:['Road inn','Balcony inn','Lantern inn'],
+ temple:['Pagoda','Mountain hall','Bell pavilion'],stall:['Striped stall','Tiled stall','Basket seller'],
+ lantern:['Square stone','Round stone'],garden:['Maple nook','Stone garden','Bamboo corner'],
+};
+export function lookOf(seed:number,b:Bld){return b.variant??(b.kind==='temple'?0:Math.floor(rand(b.x,b.z,seed+241)*variants[b.kind].length));}
+export function buildingName(b:Bld){if(b.tier===2&&b.kind==='stall')return b.specialty==='rice'?'Rice shop':b.specialty==='timber'?'Timber shop':'Teahouse';return specs[b.kind].name;}
+export const beds=(b:Bld)=>b.kind==='home'?(b.tier===2?12:8):b.kind==='rowhouse'?(b.tier===2?6:4):0;
+export const upgradeTimber=(b:Bld)=>b.kind==='rowhouse'?4:6;
+export const UPGRADE_DAYS=3, TIMBER_RESERVE=14;
+export function canAdvance(b:Bld){return b.tier!==2&&(b.kind==='home'||b.kind==='rowhouse'||b.kind==='stall');}
 export type Route={kind:'road'|'bridge',y?:number,span?:number,axis?:'x'|'z'};
 export type State={seed:number,roads:Record<string,Route>,terraces:Record<string,number>,plots?:Record<string,boolean>,trial?:true,buildings:Bld[],id:number,day:number,coin:number,rice:number,wood:number,pop:number};
 export const key=(x:number,z:number)=>`${x},${z}`;
@@ -76,13 +90,13 @@ export function check(s:State,kind:Tool,p:Pos[],rot=0){const occ=occupied(s);con
  if(kind==='temple'&&s.wood<12)return 'Need 12 timber';
  return '';}
 export function quote(s:State,kind:Tool,p:Pos[]){return specs[kind].cost*(kind==='road'?p.filter(v=>!s.roads[key(v.x,v.z)]).length:kind==='plot'?p.filter(v=>!s.plots?.[key(v.x,v.z)]).length:kind==='bridge'?p.length:1);}
-export function apply(s:State,kind:Tool,p:Pos[],rot=0){if(check(s,kind,p,rot))return false;s.coin-=quote(s,kind,p);if(kind==='plot'){s.plots??={};for(const {x,z} of p)s.plots[key(x,z)]=true;}else if(kind==='road')p.forEach(({x,z})=>{s.roads[key(x,z)]??={kind};if(s.plots)delete s.plots[key(x,z)];});else if(kind==='bridge'){const y=Math.max(...p.map(v=>height(s,v.x,v.z)))+.19,id=++s.id,axis=p[0].x===p.at(-1)!.x?'z':'x';p.forEach(({x,z})=>{s.roads[key(x,z)]={kind,y,span:id,axis};if(s.plots)delete s.plots[key(x,z)];});}else if(kind==='terrace'){const hs=p.map(v=>height(s,v.x,v.z)).sort((a,b)=>a-b);const y=Math.round(hs[Math.floor(hs.length/2)]*4)/4;p.forEach(v=>{s.terraces[key(v.x,v.z)]=y});}else if(kind==='erase'){const {x,z}=p[0],k=key(x,z),r=s.roads[k], b=occupied(s).get(k);if(x===-5&&z===24)return false;if(r?.span){for(const k in s.roads)if(s.roads[k].span===r.span)delete s.roads[k];}else if(r)delete s.roads[k];else if(b)s.buildings=s.buildings.filter(q=>q.id!==b.id);else if(s.plots?.[k])delete s.plots[k];else return false;}else{if(kind==='temple')s.wood-=12;s.buildings.push({kind,x:p[0].x,z:p[0].z,rot,id:++s.id});if(s.plots)for(const v of p)delete s.plots[key(v.x,v.z)];}return true;}
+export function apply(s:State,kind:Tool,p:Pos[],rot=0,variant?:number){if(check(s,kind,p,rot))return false;s.coin-=quote(s,kind,p);if(kind==='plot'){s.plots??={};for(const {x,z} of p)s.plots[key(x,z)]=true;}else if(kind==='road')p.forEach(({x,z})=>{s.roads[key(x,z)]??={kind};if(s.plots)delete s.plots[key(x,z)];});else if(kind==='bridge'){const y=Math.max(...p.map(v=>height(s,v.x,v.z)))+.19,id=++s.id,axis=p[0].x===p.at(-1)!.x?'z':'x';p.forEach(({x,z})=>{s.roads[key(x,z)]={kind,y,span:id,axis};if(s.plots)delete s.plots[key(x,z)];});}else if(kind==='terrace'){const hs=p.map(v=>height(s,v.x,v.z)).sort((a,b)=>a-b);const y=Math.round(hs[Math.floor(hs.length/2)]*4)/4;p.forEach(v=>{s.terraces[key(v.x,v.z)]=y});}else if(kind==='erase'){const {x,z}=p[0],k=key(x,z),r=s.roads[k], b=occupied(s).get(k);if(x===-5&&z===24)return false;if(r?.span){for(const k in s.roads)if(s.roads[k].span===r.span)delete s.roads[k];}else if(r)delete s.roads[k];else if(b)s.buildings=s.buildings.filter(q=>q.id!==b.id);else if(s.plots?.[k])delete s.plots[k];else return false;}else{if(kind==='temple')s.wood-=12;s.buildings.push({kind,x:p[0].x,z:p[0].z,rot,id:++s.id,...(Number.isInteger(variant)&&variant!>=0&&variant!<variants[kind].length?{variant}:{})});if(s.plots)for(const v of p)delete s.plots[key(v.x,v.z)];}return true;}
 export type Journey={temple:number,tiles:string[],effort:number,visits:number,bookings:Map<number,number>};
 export function stats(s:State){
  const net=access(s),front=new Map<number,Map<string,number>>();
  for(const b of s.buildings)if(!isProp(b.kind))front.set(b.id,frontage(s,cells(b.kind,b.x,b.z,b.rot),net));
  const live=s.buildings.filter(b=>front.get(b.id)?.size),byKind=(k:Kind)=>live.filter(b=>b.kind===k),count=(k:Kind)=>byKind(k).length;
- const halls=count('temple'),cap=count('home')*8+count('rowhouse')*4;
+ const halls=count('temple'),cap=live.reduce((n,b)=>n+beds(b),0);
  let workers=s.pop;const staff=(kind:Kind,n:number)=>{const group=byKind(kind),staffed=group.slice(0,Math.floor(workers/n));workers-=staffed.length*n;return staffed;};
  const farms=staff('farm',4).length,workshops=staff('work',4).length,innBuildings=staff('inn',3),inns=innBuildings.length;
  const journeys:Journey[]=[],flow=new Map<string,number>(),lodging=new Map<number,number>();
@@ -109,16 +123,19 @@ export function stats(s:State){
  const pilgrims=journeys.reduce((sum,j)=>sum+j.visits,0);
  const passing=(id:number)=>Math.max(0,...[...(front.get(id)?.keys()??[])].map(k=>flow.get(k)??0));
  const staffByTraffic=(kind:Kind,n:number)=>{const group=byKind(kind).sort((a,b)=>passing(b.id)-passing(a.id));const staffed=group.slice(0,Math.floor(workers/n));workers-=staffed.length*n;return staffed;};
- const marketBuildings=staffByTraffic('market',4),stallBuildings=staffByTraffic('stall',2),markets=marketBuildings.length,stalls=stallBuildings.length;
+ const marketBuildings=staffByTraffic('market',4),vendors=byKind('stall').sort((a,b)=>passing(b.id)-passing(a.id));
+ const stallBuildings=vendors.filter(b=>{const need=b.tier===2?3:2;if(workers<need)return false;workers-=need;return true;});
+ const markets=marketBuildings.length,stalls=stallBuildings.length;
+ const limits=stallBuildings.reduce(([rice,wood],b)=>{if(b.tier!==2)return [rice+1,wood+1];return b.specialty==='rice'?[rice+3,wood]:b.specialty==='timber'?[rice,wood+3]:[rice+2,wood+1];},[0,0]);
  const trade=new Map<number,number>();let spend=pilgrims*2;
  for(const b of [...marketBuildings,...stallBuildings].sort((a,b)=>passing(b.id)-passing(a.id))){
-  const bonus=Math.min(spend,Math.floor(passing(b.id)/(b.kind==='market'?2:3)));trade.set(b.id,bonus);spend-=bonus;
+  const bonus=Math.min(spend,Math.floor(passing(b.id)/(b.kind==='market'?2:b.tier===2&&b.specialty==='tea'?1.65:b.tier===2?2:3)));trade.set(b.id,bonus);spend-=bonus;
  }
  const touristTrade=[...trade.values()].reduce((a,b)=>a+b,0);
  const food=farms*8-Math.ceil(s.pop/5)-Math.ceil(pilgrims/8);
- const soldRice=Math.min(markets*3+stalls,Math.max(0,s.rice+food-12)), soldWood=Math.min(markets*2+stalls,Math.max(0,s.wood+workshops*3-14));
+ const soldRice=Math.min(markets*3+limits[0],Math.max(0,s.rice+food-12)), soldWood=Math.min(markets*2+limits[1],Math.max(0,s.wood+workshops*3-TIMBER_RESERVE));
  const income=Math.floor(s.pop/3)+soldRice*2+soldWood*3+pilgrims*2+touristTrade-Math.ceil(net.size/10)-halls*2-inns;
- return {net,front,live,cap,food,wood:workshops*3-soldWood,rice:food-soldRice,income,pilgrims,farms,workshops,markets,stalls,inns,halls,journeys,flow,passing,trade,lodging,touristTrade,workers};
+ return {net,front,live,housing:live.filter(b=>beds(b)>0),cap,food,wood:workshops*3-soldWood,rice:food-soldRice,income,pilgrims,farms,workshops,markets,stalls,inns,halls,journeys,flow,passing,trade,lodging,touristTrade,workers};
 }
 function grow(s:State,q:ReturnType<typeof stats>){
  const plots=s.plots;if(!plots)return 0;
@@ -160,7 +177,47 @@ function grow(s:State,q:ReturnType<typeof stats>){
  }
  return built;
 }
-export function tick(s:State){const q=stats(s);s.day++;s.rice=Math.min(999,Math.max(0,s.rice+q.rice));s.wood=Math.min(999,s.wood+q.wood);s.coin=Math.max(0,s.coin+q.income);s.pop=Math.min(q.cap,Math.max(0,s.pop+(s.rice>6?Math.min(3,q.cap-s.pop):s.rice===0?-2:0)));return grow(s,q);}
+const localRoads=(s:State,starts:Iterable<string>,net:Set<string>,steps:number)=>{
+ const d=new Map<string,number>(),open=[...starts];for(const k of open)d.set(k,0);
+ for(let i=0;i<open.length;i++){
+  const k=open[i],dist=d.get(k)!;if(dist>=steps)continue;
+  const y=roadY(s,k);for(const v of neighbors(pos(k))){const n=key(v.x,v.z);if(d.has(n)||!net.has(n)||Math.abs(roadY(s,n)-y)>=2.45)continue;d.set(n,dist+1);open.push(n);}
+ }return d;
+};
+export function nextStage(s:State,q:ReturnType<typeof stats>,b:Bld,service?:Set<string>):string|undefined{
+ if(!canAdvance(b))return 'Fully developed';
+ const fronts=q.front.get(b.id);if(!fronts?.size)return 'Needs a road to the South Gate';
+ if(b.kind==='stall'){
+  if(!q.trade.has(b.id))return 'Needs two stall workers';
+  if(q.workers<1)return 'A permanent shop needs one more worker';
+  if(q.passing(b.id)>=6)return;
+  if(s.pop<24)return 'Needs six passing pilgrims or a busy local neighborhood';
+  const area=localRoads(s,fronts.keys(),q.net,4);
+  if(q.housing.reduce((n,h)=>n+([...q.front.get(h.id)!.keys()].some(k=>area.has(k))?beds(h):0),0)<16)return 'Not enough customers on nearby streets';
+ }else{
+  if(s.rice<14||q.food<0)return 'Needs a dependable rice supply';
+  if(s.pop<Math.ceil(q.cap*.8))return 'More residents must move in first';
+  const served=service??new Set(localRoads(s,[...q.trade.keys()].flatMap(id=>[...q.front.get(id)!.keys()]),q.net,6).keys());
+  if(![...fronts.keys()].some(k=>served.has(k)))return 'Needs a staffed shop, stall, or market within six road tiles';
+ }
+}
+export function advanceBuildings(s:State,q:ReturnType<typeof stats>){
+ const service=new Set(localRoads(s,[...q.trade.keys()].flatMap(id=>[...q.front.get(id)!.keys()]),q.net,6).keys());
+ let changed=0;const ready:Bld[]=[];
+ for(const b of s.buildings)if(canAdvance(b)){
+  const old=b.progress??0;const n=nextStage(s,q,b,service)?Math.max(0,old-1):Math.min(UPGRADE_DAYS,old+1);if(n!==old)b.progress=n;
+  if((old>=2)!==(n>=2))changed++;
+  if(n===UPGRADE_DAYS)ready.push(b);
+ }
+ // One funded improvement per day. Extra materials above the reserve pay for it.
+ ready.sort((a,b)=>Number(b.kind==='stall')-Number(a.kind==='stall')||q.passing(b.id)-q.passing(a.id)||a.id-b.id);
+ for(const b of ready){const timber=upgradeTimber(b);if(s.wood-timber<TIMBER_RESERVE)continue;
+  if(b.kind==='stall')b.specialty=q.passing(b.id)>=6?'tea':s.rice>=s.wood?'rice':'timber';
+  s.wood-=timber;b.tier=2;delete b.progress;changed++;break;
+ }
+ return changed;
+}
+export function tick(s:State){const q=stats(s);s.day++;s.rice=Math.min(999,Math.max(0,s.rice+q.rice));s.wood=Math.min(999,s.wood+q.wood);s.coin=Math.max(0,s.coin+q.income);s.pop=Math.min(q.cap,Math.max(0,s.pop+(s.rice>6?Math.min(3,q.cap-s.pop):s.rice===0?-2:0)));return grow(s,q)+advanceBuildings(s,q);}
 export function fresh(seed:number):State{const s:State={seed,roads:{},buildings:[],terraces:{},id:0,day:1,coin:250,rice:22,wood:16,pop:8};for(let z=13;z<=24;z++)s.roads[key(-5,z)]={kind:'road'};for(const [k,x,z,rot] of [['home',-7,17,1],['farm',-4,19,0],['home',-4,15,3]] as [Kind,number,number,number][])if(!check(s,k,cells(k,x,z,rot)))s.buildings.push({kind:k,x,z,rot,id:++s.id});if(!s.buildings.some(b=>b.kind==='farm')){for(const [x,z,rot] of [[-8,19,0],[-8,21,0],[-4,21,0],[-8,13,0],[-4,18,1]])if(!check(s,'farm',cells('farm',x,z,rot),rot)){s.buildings.push({kind:'farm',x,z,rot,id:++s.id});break;}}s.pop=Math.min(8,stats(s).cap);return s;}
 export function line(a:Pos,b:Pos,straight=false){const p:Pos[]=[{...a}];let {x,z}=a;const dx=b.x-x,dz=b.z-z;if(straight){if(Math.abs(dx)>Math.abs(dz))b={x:b.x,z};else b={x,z:b.z};}while(x!==b.x||z!==b.z){if(x!==b.x&&(z===b.z||Math.abs(b.x-x)>=Math.abs(b.z-z)))x+=Math.sign(b.x-x);else z+=Math.sign(b.z-z);p.push({x,z});}return p;}
 
@@ -170,7 +227,7 @@ export function routeTrial(){
  const road=(x:number,z:number,a:number,b:number)=>apply(s,'road',line({x,z},{x:a,z:b}));
  for(const [x,z,a,b] of [[-5,13,-5,5],[-5,5,-11,5],[-11,5,-11,13]])road(x,z,a,b);
  for(const [k,x,z,r] of [['terrace',-14,6,0],['temple',-14,6,1],['inn',-4,11,3],['market',-9,3,0],['stall',-7,6,0],['stall',-8,14,0],['work',-7,15,1],['home',-4,17,3],['farm',-8,21,0],['lantern',-10,4,0],['garden',-6,4,0]] as [Tool,number,number,number][]){apply(s,k,cells(k,x,z,r),r);}
- s.pop=stats(s).cap;s.day=12;s.coin=175;s.rice=34;s.wood=18;
+ s.pop=stats(s).cap;s.day=12;s.coin=175;s.rice=34;s.wood=28;
  return s;
 }
 
