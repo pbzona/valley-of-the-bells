@@ -14,3 +14,4 @@
 #variant{color:var(--gold);font-size:10px;margin-left:7px;padding:2px 7px;background:#a58d6724;border-color:#ba9e6a66;white-space:nowrap}
 .look-readout{margin-top:4px;color:var(--gold);font-size:10px}
 .upgrade{padding-top:5px;font-size:10px;line-height:1.35}.pips{display:flex;gap:3px;margin:1px 0 4px}.pips i{display:block;width:13px;height:3px;border-radius:2px;background:#ada88a40}.pips i.filled{background:var(--gold)}
+@media(max-width:455px){#subtools{flex-wrap:wrap}#subtools button{white-space:nowrap;flex:1 1 auto}}

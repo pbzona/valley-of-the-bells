@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fresh, routeTrial, stats, streetPlan, tick, apply, check, cells, line, key } from '../src/sim.ts';
+import { fresh, routeTrial, stats, streetPlan, tick, apply, check, cells, line, key, rectangle, roadSurface, roadTreads, roadTop, height } from '../src/sim.ts';
 const place=(s,k,x,z,r=0)=>apply(s,k,cells(k,x,z,r),r);
 const road=(s,k,x,z,a,b)=>apply(s,k,line({x,z},{x:a,z:b},k==='bridge'));
 test('seeded maps are deterministic, with a working starter economy',()=>{
@@ -87,4 +87,24 @@ test('progression adds capacity and permanent shops without changing lot footpri
   assert.equal(stall.tier,2);assert.equal(stall.specialty,'tea');assert.ok(t.wood>=14);
   const dry=routeTrial();assert.ok(road(dry,'road',-5,13,-11,13));for(let i=0;i<3;i++)tick(dry);
   assert.equal(dry.buildings.find(b=>b.kind==='stall'&&b.z===6).tier,undefined);
+});
+
+
+test('temple courtyards carry pilgrim routes and passage pieces do not remove the paving beneath',()=>{
+  const s=routeTrial(),before=stats(s).pilgrims;
+  assert.ok(apply(s,'court',rectangle({x:-11,z:6},{x:-9,z:8})));
+  assert.ok(place(s,'templegate',-11,8));assert.ok(place(s,'cloister',-10,6,1));assert.ok(place(s,'belfry',-10,9));
+  assert.ok(stats(s).net.has(key(-11,8)));assert.equal(stats(s).pilgrims,before);
+  assert.equal(s.roads[key(-11,8)].kind,'court');assert.ok(place(s,'erase',-11,8));assert.equal(s.roads[key(-11,8)].kind,'court');
+  assert.equal(s.buildings.some(b=>b.kind==='templegate'),false);
+});
+
+test('walking deck joins landings exactly, makes stepped uphill approaches and rejects a cliff route',()=>{
+  const s=fresh(1748),a={x:-13,z:0},b={x:-12,z:0};
+  s.terraces[key(a.x,a.z)]=4;s.terraces[key(b.x,b.z)]=5.1;
+  assert.ok(roadTreads(s,a,b)>=5);assert.equal(roadSurface(s,a,b,0),roadTop(s,a));assert.equal(roadSurface(s,a,b,1),roadTop(s,b));
+  assert.ok(roadSurface(s,a,b,.72)>roadSurface(s,a,b,.29));
+  for(const t of [.204,.373,.584,.723])assert.ok(roadSurface(s,a,b,t)>=height(s,a.x+t,a.z));
+  s.terraces[key(b.x,b.z)]=6.25;
+  assert.match(check(s,'road',[a,b]),/Too steep/);assert.match(check(s,'court',[a,b]),/gentler/);
 });

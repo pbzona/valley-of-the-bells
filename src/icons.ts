@@ -15,6 +15,10 @@ const paths:Record<Tool|'bell',string>={
  lantern:'M12 3v2M6 9l6-4 6 4H6zm3 1v5h6v-5m-6 5h6m-3 0v4m-4 2h8m-6-2h4',
  garden:'M4 20h16M12 20v-7m0 4-4-4m4 3 4-4M8 12c-5 0-4-6 0-6 1-4 7-4 8 0 5 0 5 6 0 6-2 2-6 2-8 0Z',
  plot:'M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4zM10 12h4m-2-2v4',
+ court:'M4 5h16v14H4zm0 5h16M4 14h16M8 5v5m8-5v5m-4 0v4m-4 0v5m8-5v5',
+ templegate:'M3 8 12 4l9 4M5 10h14M7 10v10m10-10v10M4 20h5m6 0h5m-9-7h2',
+ cloister:'M3 7 12 4l9 3M3 9h18M6 9v10m6-10v10m6-10v10M3 19h18',
+ belfry:'M3 8 12 4l9 4M5 10v10m14-10v10M8 16c1-1 2-2 2-4a2 2 0 0 1 4 0c0 2 1 3 2 4Zm3 2h2',
  bell:'M10 5V3h4v2m-2 0c4 0 6 3 6 7v3l3 3H3l3-3v-3c0-4 2-7 6-7Zm-2 15a2 2 0 0 0 4 0M9 10h6m-7 3h8'
 };
 export function icon(k:Tool|'bell'){return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round" stroke-linecap="round"><path d="${paths[k]}"/></svg>`;}

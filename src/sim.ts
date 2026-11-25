@@ -5,11 +5,16 @@ export const specs={road:{name:'Road',icon:'╋',cost:2,w:1,d:1,hint:'Drag a rou
  stall:{name:'Stall',cost:12,w:1,d:1,hint:'Sells surplus rice and timber. Needs a road and 2 workers.'},
  lantern:{name:'Lantern',cost:3,w:1,d:1,hint:'Stone lantern. Glows at dusk; no road needed.'},
  garden:{name:'Garden',cost:5,w:1,d:1,hint:'Pocket maple garden. No road needed.'},
- plot:{name:'Grow plot',cost:2,w:1,d:1,hint:'Drag along a street. Households or traders build here when there is demand.'}} as const;
+ plot:{name:'Grow plot',cost:2,w:1,d:1,hint:'Drag along a street. Households or traders build here when there is demand.'},
+ court:{name:'Stone court',cost:2,w:1,d:1,hint:'Drag a rectangle of walkable flagstone. Roads and pilgrims connect to it.'},
+ templegate:{name:'Temple gate',cost:9,w:1,d:1,hint:'A roofed gateway. Place over a road or court, or build a paved tile beneath it.'},
+ cloister:{name:'Covered walk',cost:12,w:1,d:2,hint:'An open timber corridor with a walkable floor. Rotate to join temple buildings.'},
+ belfry:{name:'Bell shelter',cost:11,w:1,d:1,hint:'A small freestanding temple bell and roof. Purely decorative.'}} as const;
 export type Tool=keyof typeof specs;
-export type Kind=Exclude<Tool,'road'|'bridge'|'terrace'|'erase'|'plot'>;
-export const isProp=(kind:Kind)=>kind==='lantern'||kind==='garden';
-export function isKind(kind:unknown):kind is Kind{return typeof kind==='string'&&Object.hasOwn(specs,kind)&&!['road','bridge','terrace','erase','plot'].includes(kind);}
+export type Kind=Exclude<Tool,'road'|'bridge'|'terrace'|'erase'|'plot'|'court'>;
+export const isProp=(kind:Kind)=>kind==='lantern'||kind==='garden'||kind==='templegate'||kind==='cloister'||kind==='belfry';
+export const isPassage=(kind:Tool)=>kind==='templegate'||kind==='cloister';
+export function isKind(kind:unknown):kind is Kind{return typeof kind==='string'&&Object.hasOwn(specs,kind)&&!['road','bridge','terrace','erase','plot','court'].includes(kind);}
 export type Bld={kind:Kind,x:number,z:number,rot:number,id:number,grown?:boolean,style?:number,variant?:number,tier?:2,progress?:number,specialty?:ShopTrade};
 export type ShopTrade='tea'|'rice'|'timber';
 export const variants:Record<Kind,readonly string[]>={
@@ -18,6 +23,7 @@ export const variants:Record<Kind,readonly string[]>={
  market:['Canvas row','Market court','Tiled market hall'],inn:['Road inn','Balcony inn','Lantern inn'],
  temple:['Pagoda','Mountain hall','Bell pavilion'],stall:['Striped stall','Tiled stall','Basket seller'],
  lantern:['Square stone','Round stone'],garden:['Maple nook','Stone garden','Bamboo corner'],
+ templegate:['Vermilion gate','Mountain timber gate'],cloister:['Tile canopy','Cedar canopy'],belfry:['Bell shelter','Stone bell porch'],
 };
 export function lookOf(seed:number,b:Bld){return b.variant??(b.kind==='temple'?0:Math.floor(rand(b.x,b.z,seed+241)*variants[b.kind].length));}
 export function buildingName(b:Bld){if(b.tier===2&&b.kind==='stall')return b.specialty==='rice'?'Rice shop':b.specialty==='timber'?'Timber shop':'Teahouse';return specs[b.kind].name;}
@@ -25,7 +31,7 @@ export const beds=(b:Bld)=>b.kind==='home'?(b.tier===2?12:8):b.kind==='rowhouse'
 export const upgradeTimber=(b:Bld)=>b.kind==='rowhouse'?4:6;
 export const UPGRADE_DAYS=3, TIMBER_RESERVE=14;
 export function canAdvance(b:Bld){return b.tier!==2&&(b.kind==='home'||b.kind==='rowhouse'||b.kind==='stall');}
-export type Route={kind:'road'|'bridge',y?:number,span?:number,axis?:'x'|'z'};
+export type Route={kind:'road'|'bridge'|'court',y?:number,span?:number,axis?:'x'|'z'};
 export type State={seed:number,roads:Record<string,Route>,terraces:Record<string,number>,plots?:Record<string,boolean>,trial?:true,buildings:Bld[],id:number,day:number,coin:number,rice:number,wood:number,pop:number};
 export const key=(x:number,z:number)=>`${x},${z}`;
 export const pos=(k:string):Pos=>{const [x,z]=k.split(',').map(Number);return {x,z}};
@@ -59,7 +65,23 @@ export function frontage(s:State,lot:Pos[],net:Set<string>){
  return result;
 }
 export function connected(s:State,b:Bld, net=access(s)){return frontage(s,cells(b.kind,b.x,b.z,b.rot),net).size>0;}
-function roadY(s:State,k:string){const p=pos(k);return s.roads[k].y??height(s,p.x,p.z);}
+export function roadY(s:State,k:string){const p=pos(k);return s.roads[k].y??height(s,p.x,p.z);}
+export function roadTop(s:State,p:Pos,r=s.roads[key(p.x,p.z)]){
+ if(r?.y!==undefined)return r.y+.141;
+ const x=p.x,z=p.z;return Math.max(height(s,x,z),height(s,x+.27,z)-.095,height(s,x-.27,z)-.095,height(s,x,z+.27)-.095,height(s,x,z-.27)-.095)+.091;
+}
+export function roadTreads(s:State,a:Pos,b:Pos,ar=s.roads[key(a.x,a.z)],br=s.roads[key(b.x,b.z)]){
+ const d=Math.abs(roadTop(s,b,br)-roadTop(s,a,ar));return (ar?.kind!=='bridge'&&br?.kind!=='bridge'&&d>.63)?Math.ceil(d/.19):0;
+}
+export function roadSurface(s:State,a:Pos,b:Pos,t:number,ar=s.roads[key(a.x,a.z)],br=s.roads[key(b.x,b.z)]){
+ const A=roadTop(s,a,ar),B=roadTop(s,b,br),N=roadTreads(s,a,b,ar,br),dx=b.x-a.x,dz=b.z-a.z;
+ if(t<=0)return A;if(t>=1)return B;
+ const bench=(u:number)=>{const x=a.x+dx*u,z=a.z+dz*u;return Math.max(height(s,x,z),height(s,x+dz*.30,z-dx*.30)-.09,height(s,x-dz*.30,z+dx*.30)-.09)+.075;};
+ if(!N){const y=A+(B-A)*t;return ar?.kind==='bridge'&&br?.kind==='bridge'?y:Math.max(y,bench(t));}
+ const step=Math.floor(t*(N+1)),lo=step/(N+1),hi=(step+1)/(N+1),y=A+(B-A)*step/N;
+ return Math.max(y,bench(lo),bench(hi));
+}
+export function rectangle(a:Pos,b:Pos){const w=Math.abs(a.x-b.x)+1,h=Math.abs(a.z-b.z)+1;return Array.from({length:w*h},(_,i)=>({x:Math.min(a.x,b.x)+i%w,z:Math.min(a.z,b.z)+Math.floor(i/w)}));}
 function travel(s:State,net:Set<string>){
  const cost=new Map<string,number>([[GATE,0]]),prev=new Map<string,string>(),open:Array<[string,number]>=[[GATE,0]];
  const push=(v:[string,number])=>{let i=open.length;open.push(v);while(i>0){const p=(i-1)>>1;if(open[p][1]<=v[1])break;open[i]=open[p];i=p;}open[i]=v;};
@@ -76,10 +98,25 @@ function travel(s:State,net:Set<string>){
 
 export function check(s:State,kind:Tool,p:Pos[],rot=0){const occ=occupied(s);const cost=quote(s,kind,p);if(p.some(({x,z})=>!inside(x,z)))return 'Outside the province';if(kind==='erase')return '';
  if(cost>s.coin)return `Need ${cost} mon`;
- if(p.some(v=>occ.has(key(v.x,v.z))))return 'Building in the way';
+ if(p.some(v=>{const b=occ.get(key(v.x,v.z));return b&&!((kind==='road'||kind==='court')&&isPassage(b.kind));}))return 'Building in the way';
  const h=p.map(v=>height(s,v.x,v.z));
  if(kind==='bridge'){if(p.length<3||p.length>15||!(p.every(v=>v.x===p[0].x)||p.every(v=>v.z===p[0].z)))return 'Drag a straight span, 3–15 tiles';if(h[0]<.25||h.at(-1)!<.25||h.slice(1,-1).every(y=>y>WATER))return 'Start and end on opposite banks';if(Math.abs(h[0]-h.at(-1)!)>2.4)return 'Banks are too far apart in height';if(p.slice(1,-1).some(({x,z})=>s.roads[key(x,z)]))return 'Existing road in the span';if([p[0],p.at(-1)!].some(({x,z})=>s.roads[key(x,z)]?.kind==='bridge'))return 'Existing bridge in the way';return '';}
- if(kind==='road'){if(h.some(y=>y<.23))return 'Deep water — use a bridge'; if(p.some((v,i)=>i>0&&Math.abs(h[i]-h[i-1])>=2.45))return 'Too steep — try a switchback';return '';}
+ if(kind==='road'||kind==='court'){
+  if(p.some(({x,z})=>s.roads[key(x,z)]?.kind==='bridge')&&kind==='court')return 'Cannot pave a bridge deck';
+  if(h.some(y=>y<.23))return 'Deep water — use a bridge';
+  if(kind==='court'&&corners(s,p).some(y=>y<.17))return 'Court needs dry land or a terrace';
+  const pass=new Set(p.map(v=>key(v.x,v.z)));
+  for(const v of p)for(const n of neighbors(v)){
+   const a=key(v.x,v.z),b=key(n.x,n.z);if(kind==='road'&&s.roads[a]&&s.roads[b])continue;
+   if(pass.has(b)&&Math.abs(height(s,v.x,v.z)-height(s,n.x,n.z))>(kind==='court'?1.18:1.92))return kind==='court'?'Court needs a gentler slope or terrace':'Too steep — try a gentler approach or switchback';
+  }return '';
+ }
+ if(isPassage(kind)){
+  if(p.some(({x,z})=>s.roads[key(x,z)]?.kind==='bridge'))return 'Needs ground or a stone court';
+  const ys=corners(s,p);if(Math.min(...ys)<.24)return 'Too close to water';
+  if(Math.max(...ys)-Math.min(...ys)>(kind==='cloister'?1.46:1.18))return 'Needs a level court or terrace';
+  return '';
+ }
  if(p.some(v=>s.roads[key(v.x,v.z)]))return 'Road in the way';
  if(kind==='plot')return h.some(y=>y<.28)?'Plots need dry land':'';
  const samples=corners(s,p),min=Math.min(...samples),max=Math.max(...samples);if(min<.22)return 'Too close to water';
@@ -89,8 +126,8 @@ export function check(s:State,kind:Tool,p:Pos[],rot=0){const occ=occupied(s);con
  if(kind==='temple'&&min<4.2)return 'Temple needs higher ground';
  if(kind==='temple'&&s.wood<12)return 'Need 12 timber';
  return '';}
-export function quote(s:State,kind:Tool,p:Pos[]){return specs[kind].cost*(kind==='road'?p.filter(v=>!s.roads[key(v.x,v.z)]).length:kind==='plot'?p.filter(v=>!s.plots?.[key(v.x,v.z)]).length:kind==='bridge'?p.length:1);}
-export function apply(s:State,kind:Tool,p:Pos[],rot=0,variant?:number){if(check(s,kind,p,rot))return false;s.coin-=quote(s,kind,p);if(kind==='plot'){s.plots??={};for(const {x,z} of p)s.plots[key(x,z)]=true;}else if(kind==='road')p.forEach(({x,z})=>{s.roads[key(x,z)]??={kind};if(s.plots)delete s.plots[key(x,z)];});else if(kind==='bridge'){const y=Math.max(...p.map(v=>height(s,v.x,v.z)))+.19,id=++s.id,axis=p[0].x===p.at(-1)!.x?'z':'x';p.forEach(({x,z})=>{s.roads[key(x,z)]={kind,y,span:id,axis};if(s.plots)delete s.plots[key(x,z)];});}else if(kind==='terrace'){const hs=p.map(v=>height(s,v.x,v.z)).sort((a,b)=>a-b);const y=Math.round(hs[Math.floor(hs.length/2)]*4)/4;p.forEach(v=>{s.terraces[key(v.x,v.z)]=y});}else if(kind==='erase'){const {x,z}=p[0],k=key(x,z),r=s.roads[k], b=occupied(s).get(k);if(x===-5&&z===24)return false;if(r?.span){for(const k in s.roads)if(s.roads[k].span===r.span)delete s.roads[k];}else if(r)delete s.roads[k];else if(b)s.buildings=s.buildings.filter(q=>q.id!==b.id);else if(s.plots?.[k])delete s.plots[k];else return false;}else{if(kind==='temple')s.wood-=12;s.buildings.push({kind,x:p[0].x,z:p[0].z,rot,id:++s.id,...(Number.isInteger(variant)&&variant!>=0&&variant!<variants[kind].length?{variant}:{})});if(s.plots)for(const v of p)delete s.plots[key(v.x,v.z)];}return true;}
+export function quote(s:State,kind:Tool,p:Pos[]){return specs[kind].cost*(kind==='road'?p.filter(v=>!s.roads[key(v.x,v.z)]).length:kind==='court'?p.filter(v=>s.roads[key(v.x,v.z)]?.kind!=='court').length:kind==='plot'?p.filter(v=>!s.plots?.[key(v.x,v.z)]).length:kind==='bridge'?p.length:1);}
+export function apply(s:State,kind:Tool,p:Pos[],rot=0,variant?:number){if(check(s,kind,p,rot))return false;s.coin-=quote(s,kind,p);if(kind==='plot'){s.plots??={};for(const {x,z} of p)s.plots[key(x,z)]=true;}else if(kind==='road'||kind==='court')p.forEach(({x,z})=>{if(kind==='court')s.roads[key(x,z)]={kind};else s.roads[key(x,z)]??={kind};if(s.plots)delete s.plots[key(x,z)];});else if(kind==='bridge'){const y=Math.max(...p.map(v=>height(s,v.x,v.z)))+.19,id=++s.id,axis=p[0].x===p.at(-1)!.x?'z':'x';p.forEach(({x,z})=>{s.roads[key(x,z)]={kind,y,span:id,axis};if(s.plots)delete s.plots[key(x,z)];});}else if(kind==='terrace'){const hs=p.map(v=>height(s,v.x,v.z)).sort((a,b)=>a-b);const y=Math.round(hs[Math.floor(hs.length/2)]*4)/4;p.forEach(v=>{s.terraces[key(v.x,v.z)]=y});}else if(kind==='erase'){const {x,z}=p[0],k=key(x,z),r=s.roads[k], b=occupied(s).get(k);if(b&&isPassage(b.kind)){s.buildings=s.buildings.filter(q=>q.id!==b.id);return true;}if(x===-5&&z===24)return false;if(r?.span){for(const k in s.roads)if(s.roads[k].span===r.span)delete s.roads[k];}else if(r)delete s.roads[k];else if(b)s.buildings=s.buildings.filter(q=>q.id!==b.id);else if(s.plots?.[k])delete s.plots[k];else return false;}else{if(kind==='temple')s.wood-=12;if(isPassage(kind))for(const v of p)s.roads[key(v.x,v.z)]??={kind:'court'};s.buildings.push({kind,x:p[0].x,z:p[0].z,rot,id:++s.id,...(Number.isInteger(variant)&&variant!>=0&&variant!<variants[kind].length?{variant}:{})});if(s.plots)for(const v of p)delete s.plots[key(v.x,v.z)];}return true;}
 export type Journey={temple:number,tiles:string[],effort:number,visits:number,bookings:Map<number,number>};
 export function stats(s:State){
  const net=access(s),front=new Map<number,Map<string,number>>();

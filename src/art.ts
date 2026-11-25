@@ -1,7 +1,8 @@
 import * as T from 'three';
-import {C,LO,HI,height,natural,river,rand,noise,lookOf, key,pos,dims,cells,corners,type State,type Bld,type Pos,type Route} from './sim';
+import {C,LO,HI,height,natural,river,rand,noise,lookOf,neighbors,roadSurface,roadTop,roadTreads, key,pos,dims,cells,corners,type State,type Bld,type Pos,type Route} from './sim';
 const cube=new T.BoxGeometry(1,1,1).toNonIndexed();
 const con=new T.ConeGeometry(1,1,7).toNonIndexed(), stone=new T.IcosahedronGeometry(1,0).toNonIndexed();
+const bronzeBell=new T.LatheGeometry([[.54,0],[.54,.10],[.45,.16],[.39,.30],[.34,.69],[.31,.91],[.21,1.03],[.11,1.04]].map(([x,y])=>new T.Vector2(x,y)),12).toNonIndexed();
 const col=new T.Color(), col2=new T.Color(), strataTone=new T.Color(0x918b78);
 export class Batch{
  p:number[]=[]; colors:number[]=[];
@@ -54,25 +55,69 @@ export function building(out:Batch, lit:Batch,s:State,b:Bld){const dim=dims(b.ki
   for(let j=0;j<4;j++){const x=(j-1.6)*.48, z=.53+Math.sin(j*1.19)*.21;const p=pt(x,0,z);box(x,height(s,p[0]/C,p[2]/C)-Y+.034,z,.38,.11,.32,rock[j%3],.84+j*.02);}
   return;
  }
- const groundD=Y-base;
- if(b.grown){
-  const w=W-.48-r*.23,d=D-.58,offset=(r-.5)*.36;
-  box(offset,-groundD/2-.10,-.17,w,groundD+.22,d,r>.51?0x7e7f65:0x867b64);
-  for(let i=0;i<Math.floor(w/.55);i++)box(offset+(i+.5)*.55-w/2,-.13,D/2-.43,.50,.20,.14,rock[(i+b.id)%3]);
-  if(r>.38){const a=pt(-W*.29,.14,D*.35);out.shape(stone,a[0],a[1],a[2],.33,.29,.27,0x778558,r*8);}
-  if(r<.78){const a=pt(W*.25,.20,D*.33);out.shape(stone,a[0],a[1],a[2],.25,.31,.25,0x9f7752,r*11);}
- }else{box(0,-groundD/2-.12,0,W-.32,groundD+.24,D-.32,stoneBase);for(const side of [-1,1]){for(let i=0;i<Math.floor(W/.66);i++){const x=(i+.5)*.66-W/2+.22; box(x,-.24,side*(D/2-.13),.62,.27,.18,rock[(i+Math.floor(r*8))%3]);}for(let i=0;i<Math.floor(D/.66);i++)box(side*(W/2-.13),-.24,(i+.5)*.66-D/2+.22,.18,.27,.62,rock[i%3]);}}
- // The exposed face of a hillside plinth reads as masonry instead of an oversized block.
- if(groundD>.39&&!b.grown&&b.kind!=='farm')for(let row=0;row<Math.min(5,Math.ceil((groundD-.28)/.28));row++){
-  const y=-.43-row*.27;
-  for(const si of [-1,1])for(const long of [false,true]){
-   const span=long?D:W,edge=long?W:D,count=Math.floor(span/.60);
-   for(let j=0;j<count;j++){
-    const u=(j+.5)*span/count-span*.5+(row%2===0?.08:-.06),x=long?si*(edge/2-.138):u,z=long?u:si*(edge/2-.138);
-    const p=pt(x,y,z);if(p[1]+.12<height(s,p[0]/C,p[2]/C))continue;
-    const tone=rock[Math.floor(rand(j*2+si,row,b.id+Number(long)*5)*3)];box(x,y,z,long?.11:.53,.249,long?.53:.11,tone,.91+rand(j,row,b.id)*.16);
+ // Passage pieces straddle, rather than stand on, the walkable paving beneath them.
+ if(b.kind==='templegate'||b.kind==='cloister'||b.kind==='belfry'){
+  const timber=v?0x6d5441:0x8d4838,tiles=v?0x736450:0x485d59;
+  const pier=(x:number,z:number,top:number,size:number)=>{const p=pt(x,0,z),floor=height(s,p[0]/C,p[2]/C)-Y;
+   box(x,floor+.09,z,size*1.59,.28,size*1.59,stoneBase);box(x,(top+floor+.18)/2,z,size,top-floor-.18,size,timber);
+   box(x,top-.14,z,size*1.36,.20,size*1.34,trim);
+  };
+  if(b.kind==='templegate'){
+   for(const x of [-1.16,1.16])pier(x,0,2.62,.227);
+   for(const x of [-.91,.91]){box(x,2.21,-.06,.26,.13,.35,trim);glow(x,2.01,.078,.16,.24,.16);}
+   box(0,2.49,0,2.54,.18,.29,timber);box(0,2.66,0,2.70,.17,.42,timber);
+   box(0,2.41,.168,.63,.31,.08,wood);box(0,2.43,.216,.36,.021,.032,0xb69b64);
+   roof(2.95,1.84,2.70,.46,tiles,.12);return;
+  }
+  if(b.kind==='cloister'){
+   for(const x of [-1.14,1.14])for(const z of [-2.58,0,2.58])pier(x,z,2.51,.148);
+   for(const x of [-1.14,1.14])box(x,2.46,0,.17,.16,5.51,timber);
+   for(const z of [-2.58,0,2.58])box(0,2.45,z,2.41,.13,.16,timber);
+   roof(2.89,5.92,2.58,.62,tiles,.10);return;
+  }
+  box(0,.10,0,2.56,.20,2.52,stoneBase);
+  for(const x of [-.92,.92])for(const z of [-.82,.82])pier(x,z,2.62,.182);
+  box(0,2.51,0,2.09,.19,.22,timber);box(0,2.32,0,.077,.32,.078,trim);
+  const col=pt(0,1.16,-.078);out.shape(bronzeBell,col[0],col[1],col[2],.97,1.10,.97,0x8b7652,angle);
+  const ring=pt(0,1.26,-.078);out.shape(bronzeBell,ring[0],ring[1],ring[2],.975,.048,.974,0xa38c5e,angle);
+  box(.12,1.13,.42,.094,.11,1.09,wood);roof(2.82,2.65,2.65,.76,tiles);return;
+ }
+ const groundD=Y-base,raised=groundD>.59&&(b.kind==='home'||b.kind==='rowhouse');
+ const groundAt=(x:number,z:number)=>{const p=pt(x,0,z);return height(s,p[0]/C,p[2]/C)-Y;};
+ const plinthW=W-(b.grown?.65:.31),plinthD=D-(b.grown?.61:.31);
+ if(raised){
+  box(0,-.077,0,plinthW,.171,plinthD,stoneBase);box(0,-.18,0,plinthW-.16,.13,plinthD-.17,wood);
+  const nx=W<C*1.4?2:3;
+  for(let i=0;i<nx;i++)for(const side of [-1,0,1]){
+   const x=(i/(nx-1)-.5)*(plinthW-.43),z=side*(plinthD/2-.29),y=groundAt(x,z)-.072;
+   if(y<-.23){box(x,y+.10,z,.47,.24,.46,rock[(i+side+3)%3]);box(x,(y-.07)/2,z,.205,Math.max(.12,-y-.07),.209,wood);}
+  }
+  for(const side of [-1,1]){box(side*(plinthW/2-.25),-.29,0,.18,.19,plinthD-.21,wood);box(0,-.29,side*(plinthD/2-.25),plinthW-.19,.19,.19,wood);}
+ }else{
+  // Short masonry courses on shallow slopes; thicker stone lifts on the downhill side only.
+  box(0,-.087,0,plinthW,.188,plinthD,stoneBase);
+  for(const side of [-1,1])for(const along of [false,true]){
+   const span=along?plinthD:plinthW,edge=along?plinthW:plinthD,n=Math.max(1,Math.ceil(span/.61));
+   for(let i=0;i<n;i++){
+    const u=(i+.5)*span/n-span/2,x=along?side*(edge/2-.095):u,z=along?u:side*(edge/2-.089),floor=groundAt(x,z)-.095;
+    for(let j=0;j<Math.min(8,Math.ceil(Math.max(.13,-floor)/.234));j++){
+     const top=-j*.234-.06,bot=Math.max(floor,top-.22),offset=(j%2?-.036:.032);if(top-bot<.02)continue;
+     box(x+(along?0:offset),(top+bot)/2,z+(along?offset:0),along?.23:span/n-.027,top-bot,along?span/n-.027:.23,rock[Math.floor(rand(i,j,b.id+side+(along?9:0))*3)],.88+rand(j,i,b.id)*.18);
+    }
    }
   }
+  // A dark inner footing closes narrow hillside sightlines behind the dressed courses.
+  box(0,-groundD/2-.09,0,plinthW-.27,groundD+.17,plinthD-.27,0x6f6b5a);
+ }
+ if(b.grown&&b.kind!=='stall'){
+  if(r>.38){const a=pt(-W*.29,.14,D*.35);out.shape(stone,a[0],a[1],a[2],.33,.29,.27,0x778558,r*8);}
+  if(r<.78){const a=pt(W*.25,.20,D*.33);out.shape(stone,a[0],a[1],a[2],.25,.31,.25,0x9f7752,r*11);}
+ }
+ function entry(z:number,w:number,y=.12){
+  const run=Math.max(.70,Math.min(1.40,D*.5-z+.38)),foot=groundAt(0,z+run)+.047,rise=y-foot;
+  if(rise<.16)return;const n=Math.min(8,Math.ceil(rise/.18));
+  for(let i=0;i<n;i++){const zz=z+run*(1-(i+.5)/n),top=foot+rise*(i+1)/n,low=Math.min(top-.04,groundAt(0,zz)-.065);
+   box(0,(top+low)/2,zz,w,top-low,run/n+.017,rock[(b.id+i)%3]);}
  }
  if(b.kind==='farm'){
   for(let i=0;i<3;i++){
@@ -103,7 +148,7 @@ export function building(out:Batch, lit:Batch,s:State,b:Bld){const dim=dims(b.ki
   if(b.tier===2){const uy=h+.20,uw=w-.20,ud=d-.39;box(0,uy,0,w+.24,.15,d+.27,wood);store(uw,ud,uy,1.28);roof(uw+.70,ud+.85,uy+1.28,.80+r*.39,tiles);}
   else roof(w+.65,d+.77,h+.16,.75+r*.48,tiles);
   // Small slatted entry and a cloth valance across the narrow street front.
-  box(0,.14,d/2+.32,1.73,.26,.61,wood);
+  box(0,.14,d/2+.25,1.55,.26,.51,wood);entry(d/2+.40,1.30,.18);
   if(v===0)for(let i=-2;i<=2;i++)box(i*.226,1.41,d/2+.109,.21,.43,.09,r>.63?0x8e5846:0x5a7068);
   if(v===1){box(0,1.65,d/2+.35,1.72,.16,.58,trim);for(const x of [-.77,.77])box(x,.8,d/2+.53,.074,1.63,.073,wood);}
   if(v===2){for(let i=-3;i<=3;i++)box(i*.20,1.01,d/2+.098,.065,.94,.058,wood);for(let i=0;i<3;i++)box(0,.65+i*.32,d/2+.101,1.35,.061,.058,wood);}
@@ -171,7 +216,7 @@ export function building(out:Batch, lit:Batch,s:State,b:Bld){const dim=dims(b.ki
   box(0,uy,0,w+.26,.17,d+.28,wood);store(uw,ud,uy,1.42+r*.26);roof(uw+.84,ud+1.01,uy+1.42+r*.26,1.02,tiles);
   if(v===1){box(0,uy+.18,d*.39,w+.20,.12,.65,wood);box(0,uy+.58,d*.48,w+.20,.089,.091,wood);for(let i=-3;i<=3;i++)box(i*w/7,uy+.36,d*.48,.05,.49,.052,wood);}
  }else roof(w+(v===1?.96:.83),d+(v===1?.99:.85),h+.15,b.kind==='inn'?1.43:(v===1?.80:v===2?1.34:.97)+r*.32,tiles,v===1?.08:.17);
- box(0,.14,d/2+.27,w*.48,.27,.64,wood);
+ box(0,.14,d/2+.27,w*.48,.27,.64,wood);if(b.kind==='home')entry(d/2+.48,w*.45,.18);
  if(b.kind==='home'){
   if(v===1){for(const i of [-1,1])box(i*w*.34,.66,d/2+.46,.073,1.31,.074,wood);box(0,1.27,d/2+.28,w*.78,.116,.65,tiles);}
   if(v===2){box(w*.27,.69,d/2+.21,w*.42,1.20,.47,wood);glow(w*.27,.81,d/2+.459,w*.29,.45,.026,paper);box(w*.27,1.29,d/2+.215,w*.48,.12,.64,tiles);for(let i=-2;i<=2;i++)box(w*.27+i*.108,.81,d/2+.482,.026,.49,.03,trim);}
@@ -190,8 +235,56 @@ export function building(out:Batch, lit:Batch,s:State,b:Bld){const dim=dims(b.ki
  }
 
 }
-export function path(b:Batch,s:State,{x,z}:Pos,r:Route,net=true,preview?:Set<string>){const X=x*C,Z=z*C,Y=r.y??height(s,x,z);if(r.kind==='bridge'){const a=r.axis==='x'?Math.PI/2:0;for(let i=-3;i<=3;i++)b.box(X+Math.sin(a)*i*.426,Y+.03,Z+Math.cos(a)*i*.426,1.9,.22,.408,0x8e664c,a,.88+(i+3)*.027);for(const si of [-1,1]){const xx=X+si*Math.cos(a)*.96,zz=Z-si*Math.sin(a)*.96;const low=Math.min(Y-.1,height(s,x,z));b.box(xx,(Y+low)/2,zz,.16,Y-low+1.3,.16,red);b.box(xx,Y+.58,zz,.13,.14,3.0,red,a);b.box(xx,Y+.26,zz,.08,.07,3.0,wood,a);}return;}
- const adjacent=(dx:number,dz:number)=>!!s.roads[key(x+dx,z+dz)]||!!preview?.has(key(x+dx,z+dz));const wide=adjacent(1,0)||adjacent(-1,0),deep=adjacent(0,1)||adjacent(0,-1)||!wide;const gradeX=height(s,x+.42,z)-height(s,x-.42,z),gradeZ=height(s,x,z+.42)-height(s,x,z-.42),stepX=wide&&Math.abs(gradeX)>Math.abs(gradeZ),stepZ=deep&&!stepX;const stair=(stepX?Math.abs(gradeX):Math.abs(gradeZ))>.40;
- for(let j=0;j<7;j++)for(let i=0;i<7;i++){if((i===0&&!adjacent(-1,0))||(i===6&&!adjacent(1,0))||(j===0&&!adjacent(0,-1)&&z!==24)||(j===6&&!adjacent(0,1)&&z!==24))continue;if((i===0||i===6)&&(j===0||j===6))continue;const xx=x+(i-3)*.144,zz=z+(j-3)*.144;const y=height(s,stair&&stepZ?x:xx,stair&&stepX?z:zz);b.box(xx*C,y+.096,zz*C,.424,stair?.27:.18,.424,net?0xa19a80:0x9b846b,0,.86+rand(x*7+i,z*7+j,473)*.24);}}
+export function path(batch:Batch,s:State,p:Pos,r:Route,net=true,preview?:Set<string>){
+ const {x,z}=p,X=x*C,Z=z*C,Y=r.y??height(s,x,z),stoneColor=net?0xa39b82:0x9c886e;
+ if(r.kind==='bridge'){
+  const a=r.axis==='x'?Math.PI/2:0;
+  for(let i=-3;i<=3;i++)batch.box(X+Math.sin(a)*i*.426,Y+.03,Z+Math.cos(a)*i*.426,1.94,.22,.408,0x8e664c,a,.88+(i+3)*.027);
+  for(const si of [-1,1]){const xx=X+si*Math.cos(a)*.96,zz=Z-si*Math.sin(a)*.96,low=Math.min(Y-.1,height(s,x,z));batch.box(xx,(Y+low)/2,zz,.16,Y-low+1.3,.16,red);batch.box(xx,Y+.58,zz,.13,.14,3.0,red,a);batch.box(xx,Y+.26,zz,.08,.07,3.0,wood,a);}
+  return;
+ }
+ const pl=r.kind==='court',groundY=roadTop(s,p,r);
+ const get=(a:Pos):Route|undefined=>preview?.has(key(a.x,a.z))?{kind:r.kind}:s.roads[key(a.x,a.z)];
+ const extent=(p:Pos)=>({x:neighbors(p).some(a=>a.x!==p.x&&get(a))?.99:.49,z:neighbors(p).some(a=>a.z!==p.z&&get(a))?.99:.49});
+ const e=extent(p),padX=pl?1.48:e.z,padZ=pl?1.48:e.x;
+ function padY(wx:number,wz:number){
+  const ax=(wx-X),az=(wz-Z),n=Math.abs(ax/padX)>Math.abs(az/padZ)?{x:x+Math.sign(ax),z}:{x,z:z+Math.sign(az)},route=get(n);
+  return pl?Math.max(groundY-.19,height(s,wx/C,wz/C)+.096):Math.max(route?roadSurface(s,p,n,(n.x!==x?Math.abs(ax):Math.abs(az))/C,r,route):groundY,height(s,wx/C,wz/C)+.074);
+ }
+ const grid=pl?6:3;
+ for(let i=0;i<grid;i++)for(let j=0;j<grid;j++){
+  const x0=X-padX+(i+.02)*padX*2/grid,x1=X-padX+(i+.98)*padX*2/grid,z0=Z-padZ+(j+.02)*padZ*2/grid,z1=Z-padZ+(j+.98)*padZ*2/grid;
+  const a=[x0,padY(x0,z0),z0],b=[x0,padY(x0,z1),z1],c=[x1,padY(x1,z1),z1],d=[x1,padY(x1,z0),z0];
+  batch.quad(a,b,c,d,pl?0xa8a498:stoneColor,.90+rand(x*7+i,z*7+j,s.seed+3)*.17);
+ }
+ for(const q of neighbors(p)){
+  const k=key(q.x,q.z),virtual=!!preview?.has(k),r2=virtual?{kind:r.kind}:s.roads[k];if(!r2)continue;
+  const dx=q.x-x,dz=q.z-z;if(r2.kind==='bridge'&&((dx!==0?'x':'z')!==r2.axis))continue;
+  if(!preview&&r2.kind!=='bridge'&&(dx<0||dz<0))continue;
+  if(preview&&virtual&&(dx<0||dz<0))continue;
+  if(Math.abs(roadTop(s,p,r)-roadTop(s,q,r2))>2.47)continue;
+  const B=r2.kind==='court',P=r2.kind==='bridge';
+  if(pl&&B)continue;
+  const end=extent(q), high=P?2.63:B?1.55:C-(dx?end.z:end.x)+.023,low=pl?1.44:(dx?padX:padZ)-.023;if(high<=low)continue;
+  const treads=roadTreads(s,p,q,r,r2),samples=treads?treads+1:6;
+  const pt=(s:number,v:number,y:number)=>[X+dx*s+dz*v,y,Z+dz*s-dx*v];
+  const F=(length:number)=>roadSurface(s,p,q,length/C,r,r2);
+  for(let i=0;i<samples;i++){
+   const a=Math.max(low,i*C/samples),b=Math.min(high,(i+1)*C/samples);if(b<=a)continue;
+   const w0=P?.93:.97,w1=w0;
+   let y0=F(a+.001),y1=F(b-.001);
+   if(treads)y0=y1=Math.max(y0,y1);
+   for(let lane=0;lane<3;lane++){
+    const t=lane/3*2-1,u=(lane+1)/3*2-1;
+    batch.quad(pt(a,w0*t+.009,y0),pt(b,w1*t+.009,y1),pt(b,w1*u-.009,y1),pt(a,w0*u-.009,y0),stoneColor,.91+rand(x*17+lane,z*21+i,s.seed+99)*.14);
+   }
+   if(treads&&i>0&&a===i*C/samples){const prev=F(a-.003);batch.quad(pt(a,-w0,prev-.025),pt(a,-w0,y0),pt(a,w0,y0),pt(a,w0,prev-.025),0x7e7764);}
+   for(const side of [-1,1]){
+    const c=pt(a,side*w0,y0),d=pt(b,side*w1,y1),L=Math.min(c[1]-.07,height(s,c[0]/C,c[2]/C)-.039),R=Math.min(d[1]-.07,height(s,d[0]/C,d[2]/C)-.039);
+    batch.quad(c,d,[d[0],R,d[2]],[c[0],L,c[2]],0x857d6b,.88+rand(x,z,i+99)*.21);
+   }
+  }
+ }
+}
 export function gate(b:Batch,s:State){const x=-5*C,z=24*C,y=height(s,-5,24);for(const si of [-1,1]){b.box(x+si*1.48,y+1.69,z,.34,3.4,.37,red);b.box(x+si*1.48,y+.16,z,.56,.35,.56,stoneBase);}b.box(x,y+2.68,z,3.85,.26,.27,red);b.box(x,y+3.37,z,4.49,.33,.39,red);b.box(x,y+3.59,z,5.03,.15,.58,trim);b.box(x,y+3.07,z,1.03,.51,.19,trim);}
 export function waterMesh(s:State){const pts=[],idx=[];for(let i=0;i<=150;i++){const z=-37+74*i/150,x=river(z,s.seed);pts.push((x-5.3)*C,.073,z*C,(x+5.3)*C,.073,z*C);if(i<150){const p=i*2;idx.push(p,p+2,p+1,p+1,p+2,p+3);}}const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pts,3));g.setIndex(idx);const material=new T.ShaderMaterial({uniforms:{t:{value:0},night:{value:0},mist:{value:new T.Color(0xbfc4ad)}},vertexShader:`varying vec3 w;varying float d;void main(){w=position;vec4 p=modelViewMatrix*vec4(position,1.);d=-p.z;gl_Position=projectionMatrix*p;}`,fragmentShader:`varying vec3 w;varying float d;uniform float t,night;uniform vec3 mist;void main(){ float r=sin(w.z*1.83+w.x*.24+t*.83+sin(w.x*.57+w.z*.09)*1.3);float s=sin(w.x*.92+w.z*.64-t*.76);float glint=smoothstep(.85,1.,r*s);vec3 a=mix(vec3(.23,.39,.35),vec3(.05,.15,.20),night);vec3 b=mix(vec3(.48,.6,.53),vec3(.15,.26,.33),night);vec3 cl=mix(a,b,.35+.12*r+.06*s)+glint*.061;gl_FragColor=vec4(mix(cl,mist,smoothstep(43.,170.,d)),1.);}`,side:T.DoubleSide});return new T.Mesh(g,material);}
