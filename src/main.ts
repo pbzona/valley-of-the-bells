@@ -51,10 +51,31 @@ function preview(force=false){const p=candidates(),k=`${tool}/${p.map(v=>key(v.x
  if(tool==='road'){const set=new Set(p.map(v=>key(v.x,v.z)));p.forEach(v=>path(b,s,v,{kind:'road'},true,set));}else if(tool==='bridge')p.forEach(v=>path(b,s,v,{kind:'bridge',y:max+.05,axis:p[0].x===p.at(-1)!.x?'z':'x'}));else if(tool==='terrace'){const median=ys.slice().sort((a,b)=>a-b)[Math.floor(ys.length/2)];for(const v of p)b.box(v.x*C,median+.02,v.z*C,2.96,.14,2.96,0x9dbf7c);}else building(b,l,s,{kind:tool as Kind,x:p[0].x,z:p[0].z,rot,id:s.id+1});
  if(b.p.length)ghost.add(b.mesh(err?bad:good));if(l.p.length)ghost.add(l.mesh(err?bad:good));p.forEach(v=>footprint(v,!!err,tool==='bridge'?max+.05:undefined));}
 function place(){if(!tool||!hit)return;const p=candidates();const reason=check(s,tool,p,rot);if(reason){notify(reason,true);return;}if(apply(s,tool,p,rot)){save();rebuild(tool==='terrace');preview(true);if(tool==='temple')notify('Temple raised. Connect it to the South Gate.');}else if(tool==='erase')notify('Nothing removable here',true);}
-const canvas=renderer.domElement;canvas.addEventListener('contextmenu',e=>e.preventDefault());let down:{x:number,y:number,b:number,id:number,moved:boolean}|null=null;const touches=new Map<number,[number,number]>();let pinch=0;
+const canvas=renderer.domElement;canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault();});let down:{x:number,y:number,b:number,id:number,moved:boolean,grabY:number}|null=null;const touches=new Map<number,[number,number]>();let pinch=0;
 function pan(dx:number,dy:number){const speed=radius*.0018;focus.x-=dx*Math.cos(az)*speed;focus.z+=dx*Math.sin(az)*speed;focus.x+=dy*Math.sin(az)*speed;focus.z+=dy*Math.cos(az)*speed;focus.x=T.MathUtils.clamp(focus.x,-78,78);focus.z=T.MathUtils.clamp(focus.z,-78,78);focus.y=height(s,focus.x/C,focus.z/C)+.72;updateCamera();}
-canvas.addEventListener('pointerdown',e=>{over=true;canvas.setPointerCapture(e.pointerId);if(e.pointerType==='touch'){touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2){const [a,b]=[...touches.values()];pinch=Math.hypot(a[0]-b[0],a[1]-b[1]);down=null;dragStart=null;return;}}down={x:e.clientX,y:e.clientY,b:e.button,id:e.pointerId,moved:false};pointer=[e.clientX,e.clientY];position(...pointer as [number,number]);if(e.button===0&&(tool==='road'||tool==='bridge'))dragStart=hit;preview();});
-canvas.addEventListener('pointermove',e=>{over=true;pointer=[e.clientX,e.clientY];if(touches.has(e.pointerId)){touches.set(e.pointerId,pointer as [number,number]);if(touches.size===2){const [a,b]=[...touches.values()];const next=Math.hypot(a[0]-b[0],a[1]-b[1]);radius=T.MathUtils.clamp(radius*pinch/Math.max(next,1),8,143);pinch=next;updateCamera();return;}}if(down?.id===e.pointerId){const dx=e.clientX-down.x,dy=e.clientY-down.y;if(Math.abs(dx)+Math.abs(dy)>3)down.moved=true;down.x=e.clientX;down.y=e.clientY;if(down.b===2&&!e.shiftKey){az-=dx*.0065;el=T.MathUtils.clamp(el+dy*.0065,-.39,1.51);updateCamera();}else if(down.b===1||(down.b===2&&e.shiftKey)||(e.pointerType==='touch'&&!dragStart&&down.moved))pan(dx,dy);}position(e.clientX,e.clientY);preview();});
+// Keep the point on a horizontal plane at the grabbed terrain's height under the cursor.
+// Keeping focus.y fixed makes the camera translate without pitching as it crosses a slope.
+const dragPlane=new T.Plane(new T.Vector3(0,1,0)),dragFrom=new T.Vector3(),dragTo=new T.Vector3();
+function dragPoint(x:number,y:number,out:T.Vector3){
+ ndc.set(x/innerWidth*2-1,1-y/innerHeight*2);ray.setFromCamera(ndc,camera);
+ return ray.ray.intersectPlane(dragPlane,out)!==null&&out.distanceToSquared(camera.position)<radius*radius*9;
+}
+function dragPan(x:number,y:number,dx:number,dy:number,grabY:number){
+ if(!dx&&!dy)return;
+ dragPlane.constant=-grabY;
+ if(dragPoint(x-dx,y-dy,dragFrom)&&dragPoint(x,y,dragTo)){
+  focus.x+=dragFrom.x-dragTo.x;focus.z+=dragFrom.z-dragTo.z;
+ }else{
+  // Near or above the horizon, limit perspective amplification and preserve drag direction.
+  const scale=2*radius*Math.tan(T.MathUtils.degToRad(camera.fov/2))/innerHeight;
+  const dz=-dy*scale/Math.max(.45,Math.sin(el));
+  focus.x+=-dx*scale*Math.cos(az)+dz*Math.sin(az);
+  focus.z+=dx*scale*Math.sin(az)+dz*Math.cos(az);
+ }
+ focus.x=T.MathUtils.clamp(focus.x,-78,78);focus.z=T.MathUtils.clamp(focus.z,-78,78);updateCamera();
+}
+canvas.addEventListener('pointerdown',e=>{if(e.button===1)e.preventDefault();over=true;canvas.setPointerCapture(e.pointerId);if(e.pointerType==='touch'){touches.set(e.pointerId,[e.clientX,e.clientY]);if(touches.size===2){const [a,b]=[...touches.values()];pinch=Math.hypot(a[0]-b[0],a[1]-b[1]);down=null;dragStart=null;return;}}down={x:e.clientX,y:e.clientY,b:e.button,id:e.pointerId,moved:false,grabY:e.button===1||e.button===2||e.pointerType==='touch'?cast(e.clientX,e.clientY)?.y??focus.y:focus.y};pointer=[e.clientX,e.clientY];position(...pointer as [number,number]);if(e.button===0&&(tool==='road'||tool==='bridge'))dragStart=hit;preview();});
+canvas.addEventListener('pointermove',e=>{over=true;pointer=[e.clientX,e.clientY];if(touches.has(e.pointerId)){touches.set(e.pointerId,pointer as [number,number]);if(touches.size===2){const [a,b]=[...touches.values()];const next=Math.hypot(a[0]-b[0],a[1]-b[1]);radius=T.MathUtils.clamp(radius*pinch/Math.max(next,1),8,143);pinch=next;updateCamera();return;}}if(down?.id===e.pointerId){const dx=e.clientX-down.x,dy=e.clientY-down.y;if(Math.abs(dx)+Math.abs(dy)>3)down.moved=true;down.x=e.clientX;down.y=e.clientY;if(down.b===2&&!e.shiftKey){az-=dx*.0065;el=T.MathUtils.clamp(el+dy*.0065,-.39,1.51);updateCamera();}else if(down.b===1||(down.b===2&&e.shiftKey)||(e.pointerType==='touch'&&!dragStart&&down.moved))dragPan(e.clientX,e.clientY,dx,dy,down.grabY);}position(e.clientX,e.clientY);preview();});
 canvas.addEventListener('pointerleave',()=>{if(!down){over=false;hit=null;preview();}});
 canvas.addEventListener('pointercancel',e=>{touches.delete(e.pointerId);down=null;dragStart=null;preview(true);});
 canvas.addEventListener('pointerup',e=>{touches.delete(e.pointerId);if(!down||down.id!==e.pointerId)return;position(e.clientX,e.clientY);if(down.b===0){if(tool&&(dragStart||!down.moved))place();else if(!tool&&!down.moved){const b=hit&&occupied(s).get(key(hit.x,hit.z));chosen=b?b.id:undefined;paint();}}dragStart=null;down=null;if(e.pointerType==='touch'){hit=null;over=false;}preview(true);});
