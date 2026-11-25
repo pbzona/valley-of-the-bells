@@ -59,6 +59,18 @@ export function building(out:Batch, lit:Batch,s:State,b:Bld){const dim=dims(b.ki
   if(r>.38){const a=pt(-W*.29,.14,D*.35);out.shape(stone,a[0],a[1],a[2],.33,.29,.27,0x778558,r*8);}
   if(r<.78){const a=pt(W*.25,.20,D*.33);out.shape(stone,a[0],a[1],a[2],.25,.31,.25,0x9f7752,r*11);}
  }else{box(0,-groundD/2-.12,0,W-.32,groundD+.24,D-.32,stoneBase);for(const side of [-1,1]){for(let i=0;i<Math.floor(W/.66);i++){const x=(i+.5)*.66-W/2+.22; box(x,-.24,side*(D/2-.13),.62,.27,.18,rock[(i+Math.floor(r*8))%3]);}for(let i=0;i<Math.floor(D/.66);i++)box(side*(W/2-.13),-.24,(i+.5)*.66-D/2+.22,.18,.27,.62,rock[i%3]);}}
+ // The exposed face of a hillside plinth reads as masonry instead of an oversized block.
+ if(groundD>.39&&!b.grown&&b.kind!=='farm')for(let row=0;row<Math.min(5,Math.ceil((groundD-.28)/.28));row++){
+  const y=-.43-row*.27;
+  for(const si of [-1,1])for(const long of [false,true]){
+   const span=long?D:W,edge=long?W:D,count=Math.floor(span/.60);
+   for(let j=0;j<count;j++){
+    const u=(j+.5)*span/count-span*.5+(row%2===0?.08:-.06),x=long?si*(edge/2-.138):u,z=long?u:si*(edge/2-.138);
+    const p=pt(x,y,z);if(p[1]+.12<height(s,p[0]/C,p[2]/C))continue;
+    const tone=rock[Math.floor(rand(j*2+si,row,b.id+Number(long)*5)*3)];box(x,y,z,long?.11:.53,.249,long?.53:.11,tone,.91+rand(j,row,b.id)*.16);
+   }
+  }
+ }
  if(b.kind==='farm'){for(let i=0;i<3;i++){const x=(i-1)*2.77;box(x,.008,0,2.62,.045,5.18,0x576f5a);box(x-1.37,.07,0,.14,.18,5.54,0x88765a);for(let j=0;j<8;j++)for(let k=0;k<5;k++){const rr=rand(i*13+j,k,b.id);const p=pt(x+(k-2)*.42,.13,(j-3.5)*.61);out.shape(con,p[0],p[1],p[2],.09+rr*.05,.21+rr*.19,.09,[0xa2a65d,0xb4af66,0x798d58][(k+j)%3],rr*6);}}box(0,.06,2.64,W-.32,.18,.22,0x857554);box(0,.06,-2.64,W-.32,.18,.22,0x857554);return;}
  function roof(w:number,d:number,y:number,rise:number,cl:number,hip=.17){const t=(u:number,v:number)=>pt(u*(w/2)*(1-hip*(1-v)),y+rise*(1-v)**1.52+.32*Math.pow(Math.abs(u),6)*(v*.8+.2),v*d/2);const sideP=(u:number,v:number,j:number)=>{const a=t(u,v);return j===1?a:pt(u*(w/2)*(1-hip*(1-v)),a[1]-Y,-v*d/2);};for(const j of [-1,1]){ const tiles=Math.max(9,Math.floor(w/.39)),runs=9;for(let i=0;i<tiles;i++)for(let k=0;k<runs;k++){const u=-1+i*2/tiles,v=k/runs,u2=u+2/tiles,v2=(k+1)/runs, sh=.86+rand(i,k,b.id+j)*.26;const a=sideP(u,v,j),b0=sideP(u,v2,j),c=sideP(u2,v2,j),d0=sideP(u2,v,j);if(j===1)out.quad(a,b0,c,d0,cl,sh);else out.quad(d0,c,b0,a,cl,sh);if(k%2===1){const end=c.map((m,i)=>(m+b0[i])*.5);end[1]+=.037;out.tri(b0,end,d0,cl,.64);}}for(let i=0;i<tiles;i++){const u=-1+(i+.5)*2/tiles;const a=sideP(u,1,j);out.shape(stone,a[0],a[1]+.03,a[2],.177,.10,.119,cl,angle,.65);}}
  for(const j of [-1,1]){const tip=sideP(j,0,1),c=pt(j*w*.5,y,d/2),e=pt(j*w*.5,y,-d/2);out.tri(tip,e,c,cl,.72);}

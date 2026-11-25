@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fresh, routeTrial, stats, tick, apply, check, cells, line, key } from '../src/sim.ts';
+import { fresh, routeTrial, stats, streetPlan, tick, apply, check, cells, line, key } from '../src/sim.ts';
 const place=(s,k,x,z,r=0)=>apply(s,k,cells(k,x,z,r),r);
 const road=(s,k,x,z,a,b)=>apply(s,k,line({x,z},{x:a,z:b},k==='bridge'));
 test('seeded maps are deterministic, with a working starter economy',()=>{
@@ -62,4 +62,16 @@ test('growth needs whole reserved lots, faces frontage, and puts stalls where pi
   const b=s.buildings.at(-1);assert.equal(b.kind,'rowhouse');assert.equal(b.rot,1);assert.equal(b.grown,true);assert.ok(b.style>=0&&b.style<1);assert.equal(stats(s).cap,20);assert.equal(Object.keys(s.plots).length,0);
   const market=routeTrial();assert.ok(place(market,'plot',-4,8));assert.equal(tick(market),1);assert.equal(market.buildings.at(-1).kind,'stall');
   const none=routeTrial();assert.ok(place(none,'plot',-4,8));assert.ok(road(none,'road',-5,13,-11,13));assert.equal(tick(none),0);assert.ok(none.plots[key(-4,8)]);
+});
+
+
+test('street cues reflect commerce and lodging without occupying grid cells',()=>{
+  const s=routeTrial(),market=s.buildings.find(b=>b.kind==='market'),inn=s.buildings.find(b=>b.kind==='inn');
+  const before=streetPlan(s);assert.equal(before.spans.length,1);assert.equal(before.shops.find(v=>v.b.id===market.id).busy,5);
+  assert.ok(before.stops[0].some(v=>v.kind==='inn'&&v.building===inn.id));assert.ok(before.stops[0].some(v=>v.kind==='shop'));
+  assert.ok(before.stops[0].some(v=>v.kind==='temple'));assert.equal(check(s,'road',cells('road',-5,18)), '');
+  const buildings=s.buildings.length;assert.ok(road(s,'road',-5,13,-11,13));
+  const after=streetPlan(s),oldMarket=after.shops.find(v=>v.b.id===market.id);assert.equal(oldMarket.busy,0);assert.ok(oldMarket.base);
+  assert.equal(stats(s).lodging.get(inn.id),4);assert.equal(after.spans.length,0);assert.equal(s.buildings.length,buildings);
+  assert.ok(after.stops[0].every(v=>v.building!==market.id));
 });
