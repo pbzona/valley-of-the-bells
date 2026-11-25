@@ -14,6 +14,7 @@ const paths:Record<Tool|'bell',string>={
  stall:'M5 12v9m14-9v9M4 20h16M3 10l3-6h12l3 6v2H3zm5-6-1 6m9-6 1 6M5 16h14',
  lantern:'M12 3v2M6 9l6-4 6 4H6zm3 1v5h6v-5m-6 5h6m-3 0v4m-4 2h8m-6-2h4',
  garden:'M4 20h16M12 20v-7m0 4-4-4m4 3 4-4M8 12c-5 0-4-6 0-6 1-4 7-4 8 0 5 0 5 6 0 6-2 2-6 2-8 0Z',
+ plot:'M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4zM10 12h4m-2-2v4',
  bell:'M10 5V3h4v2m-2 0c4 0 6 3 6 7v3l3 3H3l3-3v-3c0-4 2-7 6-7Zm-2 15a2 2 0 0 0 4 0M9 10h6m-7 3h8'
 };
 export function icon(k:Tool|'bell'){return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round" stroke-linecap="round"><path d="${paths[k]}"/></svg>`;}

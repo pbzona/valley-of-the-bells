@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fresh, stats, tick, apply, check, cells, line, key } from '../src/sim.ts';
+import { fresh, routeTrial, stats, tick, apply, check, cells, line, key } from '../src/sim.ts';
 const place=(s,k,x,z,r=0)=>apply(s,k,cells(k,x,z,r),r);
 const road=(s,k,x,z,a,b)=>apply(s,k,line({x,z},{x:a,z:b},k==='bridge'));
 test('seeded maps are deterministic, with a working starter economy',()=>{
@@ -42,4 +42,24 @@ test('narrow buildings and props occupy only their stated footprints',()=>{
   assert.equal(check(s,'stall',cells('stall',-8,18)),'Building in the way');
   assert.ok(place(s,'erase',-8,18));assert.ok(s.buildings.some(b=>b.kind==='lantern'));
   assert.ok(place(s,'erase',-5,18));assert.equal(stats(s).stalls,0);
+});
+
+
+test('a quicker approach reroutes visitors, lodging and trade; cutting it restores the old market',()=>{
+  const s=routeTrial();const market=s.buildings.find(b=>b.kind==='market');
+  const old=stats(s);assert.equal(old.pilgrims,10);assert.equal(old.passing(market.id),10);assert.ok(old.trade.get(market.id)>0);
+  assert.ok(road(s,'road',-5,13,-11,13));
+  const short=stats(s);assert.ok(short.journeys[0].effort<old.journeys[0].effort);assert.ok(short.journeys[0].tiles.includes(key(-8,13)));
+  assert.equal(short.passing(market.id),0);assert.equal(short.trade.get(market.id),0);assert.equal(short.pilgrims,4);
+  assert.ok(place(s,'inn',-9,11));assert.ok(stats(s).pilgrims>old.pilgrims);
+  assert.ok(place(s,'erase',-8,13));assert.ok(stats(s).passing(market.id)>0);
+});
+
+test('growth needs whole reserved lots, faces frontage, and puts stalls where pilgrims pass',()=>{
+  const s=fresh(1748);s.pop=16;
+  assert.ok(place(s,'plot',-6,14));assert.equal(tick(s),0);
+  assert.ok(place(s,'plot',-7,14));assert.equal(tick(s),1);
+  const b=s.buildings.at(-1);assert.equal(b.kind,'rowhouse');assert.equal(b.rot,1);assert.equal(b.grown,true);assert.ok(b.style>=0&&b.style<1);assert.equal(stats(s).cap,20);assert.equal(Object.keys(s.plots).length,0);
+  const market=routeTrial();assert.ok(place(market,'plot',-4,8));assert.equal(tick(market),1);assert.equal(market.buildings.at(-1).kind,'stall');
+  const none=routeTrial();assert.ok(place(none,'plot',-4,8));assert.ok(road(none,'road',-5,13,-11,13));assert.equal(tick(none),0);assert.ok(none.plots[key(-4,8)]);
 });
