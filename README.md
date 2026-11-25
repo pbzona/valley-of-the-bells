@@ -18,7 +18,7 @@ Use Node 22.13+ (or current LTS). The Vite build produces a standalone `dist/ind
 - Roads leading to the **South Gate** activate neighboring buildings. Drag roads along the ground or bridge straight across a river. On steep climbs, lay shorter runs and switchbacks.
 - Houses grow the workforce, rice paddies feed it, workshops make timber, and markets sell surplus. The ledger shows the effect each day.
 - Carve a terrace above the valley and raise a temple. A connected, staffed inn and at least 16 residents bring the first pilgrims. The early objective is 32 residents and 20 pilgrims per day.
-- **1–0** selects construction, **R** rotates, **Esc** cancels, **Space** plays/pauses, **N** toggles dusk, and **H** hides the interface. Right drag orbits; middle drag or Shift + right drag pans. On touch, drag to pan or draw the selected road/bridge and pinch to zoom.
+- **1–0** selects construction, **R** rotates, **Esc** cancels, **Space** plays/pauses, **N** toggles dusk, and **H** hides the interface. Right drag orbits; hold WASD or the arrow keys to pan, or drag with middle mouse or Shift + right mouse. On touch, drag to pan or draw the selected road/bridge and pinch to zoom.
 - Save data stays in the browser. Settings has JSON import/export and seed selection.
 
 ## Source layout
