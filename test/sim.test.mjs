@@ -30,3 +30,16 @@ test('bridges connect bank-to-bank and erase as one structure',()=>{
   assert.ok(road(s,'road',-5,13,-5,10));assert.ok(road(s,'road',-5,10,2,10));
   assert.ok(stats(s).net.has(key(14,10)));assert.ok(place(s,'erase',7,10));assert.ok(!s.roads[key(14,10)]);
 });
+
+test('narrow buildings and props occupy only their stated footprints',()=>{
+  const s=fresh(1748);
+  assert.deepEqual(cells('rowhouse',-6,15),[{x:-6,z:15},{x:-6,z:16}]);
+  assert.deepEqual(cells('rowhouse',-4,14,1),[{x:-4,z:14},{x:-3,z:14}]);
+  assert.ok(place(s,'rowhouse',-6,15));assert.ok(place(s,'rowhouse',-4,14,1));
+  assert.ok(place(s,'stall',-4,18));assert.ok(place(s,'lantern',-8,17));assert.ok(place(s,'garden',-8,18));
+  assert.equal(stats(s).cap,24);assert.equal(stats(s).stalls,1);
+  assert.equal(stats(s).rice,5);assert.equal(stats(s).wood,-1);
+  assert.equal(check(s,'stall',cells('stall',-8,18)),'Building in the way');
+  assert.ok(place(s,'erase',-8,18));assert.ok(s.buildings.some(b=>b.kind==='lantern'));
+  assert.ok(place(s,'erase',-5,18));assert.equal(stats(s).stalls,0);
+});

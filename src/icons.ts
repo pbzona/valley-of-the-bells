@@ -10,6 +10,10 @@ const paths:Record<Tool|'bell',string>={
  temple:'M12 2v3M5 9l7-4 7 4m-12 1v4m10-4v4M3 16l9-4 9 4m-15 1v4m12-4v4M4 21h16m-10 0v-4h4v4',
  terrace:'M3 20h18M3 19v-4h5v-4h5V7h5V3h3v16',
  erase:'m5 5 14 14M19 5 5 19',
+ rowhouse:'m5 8 7-5 7 5M7 8v13h10V8M9 10h6v4H9zm1 11v-4h4v4',
+ stall:'M5 12v9m14-9v9M4 20h16M3 10l3-6h12l3 6v2H3zm5-6-1 6m9-6 1 6M5 16h14',
+ lantern:'M12 3v2M6 9l6-4 6 4H6zm3 1v5h6v-5m-6 5h6m-3 0v4m-4 2h8m-6-2h4',
+ garden:'M4 20h16M12 20v-7m0 4-4-4m4 3 4-4M8 12c-5 0-4-6 0-6 1-4 7-4 8 0 5 0 5 6 0 6-2 2-6 2-8 0Z',
  bell:'M10 5V3h4v2m-2 0c4 0 6 3 6 7v3l3 3H3l3-3v-3c0-4 2-7 6-7Zm-2 15a2 2 0 0 0 4 0M9 10h6m-7 3h8'
 };
 export function icon(k:Tool|'bell'){return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round" stroke-linecap="round"><path d="${paths[k]}"/></svg>`;}
