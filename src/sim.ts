@@ -49,6 +49,23 @@ export function natural(x:number,z:number,seed:number){const d=Math.abs(x-river(
  const shore=Math.min(1,(d-bank)/3.3);return lerp(-.52,.66+variation+hills,shore);
 }
 export function height(s:State,x:number,z:number){const y=natural(x,z,s.seed),a=Math.round(x),b=Math.round(z),t=s.terraces[key(a,b)];return t===undefined?y:t;}
+export const TERRAIN_DIVISIONS=3;
+export function terraceLevel(s:State,p:Pos[]){
+ const ys=p.map(v=>height(s,v.x,v.z)).sort((a,b)=>a-b);
+ return Math.round(ys[Math.floor(ys.length/2)]*4)/4;
+}
+// Sample both sides at exactly the same positions as the adjacent terrain triangles.
+export function terraceEdges(s:State,{x,z}:Pos,top:number){
+ return [[1,0],[-1,0],[0,1],[0,-1]].flatMap(([dx,dz])=>{
+  const neighbor=s.terraces[key(x+dx,z+dz)];
+  if(neighbor!==undefined&&neighbor>=top)return [];
+  const points=Array.from({length:TERRAIN_DIVISIONS+1},(_,i)=>{
+   const t=i/TERRAIN_DIVISIONS-.5,X=x+dx*.5+dz*t,Z=z+dz*.5+dx*t;
+   return {x:X,z:Z,y:neighbor??natural(X,Z,s.seed)};
+  });
+  return [{dx,dz,points}];
+ });
+}
 export function dims(kind:Tool,rot=0){const {w,d}=specs[kind];return rot%2?{w:d,d:w}:{w,d};}
 export function cells(kind:Tool,x:number,z:number,rot=0):Pos[]{const {w,d}=dims(kind,rot);return Array.from({length:w*d},(_,i)=>({x:x+i%w,z:z+Math.floor(i/w)}));}
 export function corners(s:State,p:Pos[]){return p.flatMap(({x,z})=>[height(s,x,z),height(s,x-.44,z-.44),height(s,x+.44,z-.44),height(s,x+.44,z+.44),height(s,x-.44,z+.44)]);}
@@ -67,19 +84,80 @@ export function frontage(s:State,lot:Pos[],net:Set<string>){
 export function connected(s:State,b:Bld, net=access(s)){return frontage(s,cells(b.kind,b.x,b.z,b.rot),net).size>0;}
 export function roadY(s:State,k:string){const p=pos(k);return s.roads[k].y??height(s,p.x,p.z);}
 export function roadTop(s:State,p:Pos,r=s.roads[key(p.x,p.z)]){
- if(r?.y!==undefined)return r.y+.141;
- const x=p.x,z=p.z;return Math.max(height(s,x,z),height(s,x+.27,z)-.095,height(s,x-.27,z)-.095,height(s,x,z+.27)-.095,height(s,x,z-.27)-.095)+.091;
+ if(r?.y!==undefined)return r.y+.14;
+ const x=p.x,z=p.z;
+ if(r?.kind==='court')return height(s,x,z)+.10;
+ let y=-Infinity;
+ for(const dx of [-.31,0,.31])for(const dz of [-.31,0,.31])y=Math.max(y,height(s,x+dx,z+dz));
+ return y+.085;
 }
+export function roadPad(s:State,p:Pos,axis:'x'|'z',r?:Route,get:(v:Pos)=>Route|undefined=(v:Pos)=>s.roads[key(v.x,v.z)]):number{
+ if(r?.kind==='bridge')return 1.494;if(r?.kind==='court')return 1.5;
+ const x=p.x,z=p.z,h=roadTop(s,p,r);
+ const live=(a:Pos)=>{const v=get(a);return !!v&&Math.abs(roadTop(s,a,v)-h)<=2.60&&(v.kind!=='bridge'||v.axis===(a.x!==x?'x':'z'));};
+ const along=axis==='x'?[{x:x-1,z},{x:x+1,z}]:[{x,z:z-1},{x,z:z+1}],cross=axis==='x'?[{x,z:z-1},{x,z:z+1}]:[{x:x-1,z},{x:x+1,z}];
+ return along.every(live)&&!cross.some(live)?.25:.96;
+}
+export function roadReach(s:State,p:Pos,axis:'x'|'z',r?:Route,get?:(v:Pos)=>Route|undefined){return r?.kind==='court'?.38:roadPad(s,p,axis,r,get)/C;}
+
 export function roadTreads(s:State,a:Pos,b:Pos,ar=s.roads[key(a.x,a.z)],br=s.roads[key(b.x,b.z)]){
- const d=Math.abs(roadTop(s,b,br)-roadTop(s,a,ar));return (ar?.kind!=='bridge'&&br?.kind!=='bridge'&&d>.63)?Math.ceil(d/.19):0;
+ const d=Math.abs(roadTop(s,b,br)-roadTop(s,a,ar));return ar?.kind==='bridge'&&br?.kind==='bridge'||d<=.51?0:Math.ceil(d/.205);
+}
+export type RoadPiece={from:number,to:number,y0:number,y1:number};
+export function roadProfile(s:State,a:Pos,b:Pos,ar=s.roads[key(a.x,a.z)],br=s.roads[key(b.x,b.z)],get?:(v:Pos)=>Route|undefined):RoadPiece[]{
+ if(a.x>b.x||a.z>b.z)return roadProfile(s,b,a,br,ar,get).reverse().map(p=>({from:1-p.to,to:1-p.from,y0:p.y1,y1:p.y0}));
+ const A=roadTop(s,a,ar),B=roadTop(s,b,br),N=roadTreads(s,a,b,ar,br);
+ // Court edges remain walkable, but ramps are allowed to overlap the flagstones at the threshold.
+ const axis=a.x!==b.x?'x':'z';
+ const start=roadReach(s,a,axis,ar,get),end=1-roadReach(s,b,axis,br,get),out:RoadPiece[]=[];
+ if(end<=start+.013)return [{from:0,to:1,y0:A,y1:B}];
+ out.push({from:0,to:start,y0:A,y1:A});
+ if(N){
+  // Begin and end with half treads, so neither landing swallows the first or last riser.
+  for(let i=0;i<=N;i++){
+   const from=start+(end-start)*Math.max(0,i-.5)/N,to=start+(end-start)*Math.min(N,i+.5)/N,y=A+(B-A)*i/N;
+   out.push({from,to,y0:y,y1:y});
+  }
+ }else out.push({from:start,to:end,y0:A,y1:B});
+ out.push({from:end,to:1,y0:B,y1:B});return out;
+}
+export function sampleRoad(profile:RoadPiece[],t:number){
+ const piece=profile.find(p=>t<p.to)??profile.at(-1)!;return lerp(piece.y0,piece.y1,Math.max(0,Math.min(1,(t-piece.from)/(piece.to-piece.from))));
 }
 export function roadSurface(s:State,a:Pos,b:Pos,t:number,ar=s.roads[key(a.x,a.z)],br=s.roads[key(b.x,b.z)]){
- const A=roadTop(s,a,ar),B=roadTop(s,b,br),N=roadTreads(s,a,b,ar,br),dx=b.x-a.x,dz=b.z-a.z;
- if(t<=0)return A;if(t>=1)return B;
- const bench=(u:number)=>{const x=a.x+dx*u,z=a.z+dz*u;return Math.max(height(s,x,z),height(s,x+dz*.30,z-dx*.30)-.09,height(s,x-dz*.30,z+dx*.30)-.09)+.075;};
- if(!N){const y=A+(B-A)*t;return ar?.kind==='bridge'&&br?.kind==='bridge'?y:Math.max(y,bench(t));}
- const step=Math.floor(t*(N+1)),lo=step/(N+1),hi=(step+1)/(N+1),y=A+(B-A)*step/N;
- return Math.max(y,bench(lo),bench(hi));
+ return sampleRoad(roadProfile(s,a,b,ar,br),t);
+}
+// Cut only inside paved corridors, leaving the surrounding slope and terrace heights untouched.
+// Sample the cached road deck rather than making individual stair treads dodge the terrain.
+export function terrainGrader(s:State){
+ type Link={dx:number,dz:number,lo:number,hi:number,deck:RoadPiece[]};
+ type Site={x:number,z:number,y:number,w:number,d:number,pad:boolean,links:Link[]};
+ const sites=new Map<string,Site>();
+ for(const [k,r] of Object.entries(s.roads))if(r.kind!=='bridge'){
+  const p=pos(k),y=roadTop(s,p,r),links:Link[]=[];
+  for(const a of neighbors(p)){
+   const other=s.roads[key(a.x,a.z)],axis=a.x!==p.x?'x':'z';
+   if(!other||(r.kind==='court'&&other.kind==='court')||Math.abs(roadTop(s,a,other)-y)>2.60)continue;
+   if(other.kind==='bridge'?other.axis!==axis:(a.x<p.x||a.z<p.z))continue;
+   links.push({dx:a.x-p.x,dz:a.z-p.z,lo:roadReach(s,p,axis,r)-.03,hi:1-roadReach(s,a,axis,other)+.03,deck:roadProfile(s,p,a,r,other)});
+  }
+  sites.set(k,{...p,y,w:roadPad(s,p,'x',r)/C,d:roadPad(s,p,'z',r)/C,pad:r.kind==='road',links});
+ }
+ const feather=(over:number)=>Math.max(0,1-Math.max(0,over)/.31);
+ return (x:number,z:number,y:number)=>{
+  const original=y,cx=Math.round(x),cz=Math.round(z);
+  for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){
+   const site=sites.get(key(cx+i,cz+j));if(!site)continue;
+   const dx=x-site.x,dz=z-site.z;
+   if(site.pad){const w=feather(Math.max(Math.abs(dx)-site.w-.04,Math.abs(dz)-site.d-.04));if(w)y=Math.min(y,lerp(original,site.y-.16,w));}
+   for(const {dx:u,dz:v,lo,hi,deck} of site.links){
+    const t=dx*u+dz*v,across=Math.abs(u?dz:dx);
+    if(t<lo||t>hi)continue;
+    const w=feather(across-.51);if(w)y=Math.min(y,lerp(original,sampleRoad(deck,t)-.23,w));
+   }
+  }
+  return y;
+ };
 }
 export function rectangle(a:Pos,b:Pos){const w=Math.abs(a.x-b.x)+1,h=Math.abs(a.z-b.z)+1;return Array.from({length:w*h},(_,i)=>({x:Math.min(a.x,b.x)+i%w,z:Math.min(a.z,b.z)+Math.floor(i/w)}));}
 function travel(s:State,net:Set<string>){
@@ -127,7 +205,7 @@ export function check(s:State,kind:Tool,p:Pos[],rot=0){const occ=occupied(s);con
  if(kind==='temple'&&s.wood<12)return 'Need 12 timber';
  return '';}
 export function quote(s:State,kind:Tool,p:Pos[]){return specs[kind].cost*(kind==='road'?p.filter(v=>!s.roads[key(v.x,v.z)]).length:kind==='court'?p.filter(v=>s.roads[key(v.x,v.z)]?.kind!=='court').length:kind==='plot'?p.filter(v=>!s.plots?.[key(v.x,v.z)]).length:kind==='bridge'?p.length:1);}
-export function apply(s:State,kind:Tool,p:Pos[],rot=0,variant?:number){if(check(s,kind,p,rot))return false;s.coin-=quote(s,kind,p);if(kind==='plot'){s.plots??={};for(const {x,z} of p)s.plots[key(x,z)]=true;}else if(kind==='road'||kind==='court')p.forEach(({x,z})=>{if(kind==='court')s.roads[key(x,z)]={kind};else s.roads[key(x,z)]??={kind};if(s.plots)delete s.plots[key(x,z)];});else if(kind==='bridge'){const y=Math.max(...p.map(v=>height(s,v.x,v.z)))+.19,id=++s.id,axis=p[0].x===p.at(-1)!.x?'z':'x';p.forEach(({x,z})=>{s.roads[key(x,z)]={kind,y,span:id,axis};if(s.plots)delete s.plots[key(x,z)];});}else if(kind==='terrace'){const hs=p.map(v=>height(s,v.x,v.z)).sort((a,b)=>a-b);const y=Math.round(hs[Math.floor(hs.length/2)]*4)/4;p.forEach(v=>{s.terraces[key(v.x,v.z)]=y});}else if(kind==='erase'){const {x,z}=p[0],k=key(x,z),r=s.roads[k], b=occupied(s).get(k);if(b&&isPassage(b.kind)){s.buildings=s.buildings.filter(q=>q.id!==b.id);return true;}if(x===-5&&z===24)return false;if(r?.span){for(const k in s.roads)if(s.roads[k].span===r.span)delete s.roads[k];}else if(r)delete s.roads[k];else if(b)s.buildings=s.buildings.filter(q=>q.id!==b.id);else if(s.plots?.[k])delete s.plots[k];else return false;}else{if(kind==='temple')s.wood-=12;if(isPassage(kind))for(const v of p)s.roads[key(v.x,v.z)]??={kind:'court'};s.buildings.push({kind,x:p[0].x,z:p[0].z,rot,id:++s.id,...(Number.isInteger(variant)&&variant!>=0&&variant!<variants[kind].length?{variant}:{})});if(s.plots)for(const v of p)delete s.plots[key(v.x,v.z)];}return true;}
+export function apply(s:State,kind:Tool,p:Pos[],rot=0,variant?:number){if(check(s,kind,p,rot))return false;s.coin-=quote(s,kind,p);if(kind==='plot'){s.plots??={};for(const {x,z} of p)s.plots[key(x,z)]=true;}else if(kind==='road'||kind==='court')p.forEach(({x,z})=>{if(kind==='court')s.roads[key(x,z)]={kind};else s.roads[key(x,z)]??={kind};if(s.plots)delete s.plots[key(x,z)];});else if(kind==='bridge'){const y=Math.max(...p.map(v=>height(s,v.x,v.z)))+.19,id=++s.id,axis=p[0].x===p.at(-1)!.x?'z':'x';p.forEach(({x,z})=>{s.roads[key(x,z)]={kind,y,span:id,axis};if(s.plots)delete s.plots[key(x,z)];});}else if(kind==='terrace'){const y=terraceLevel(s,p);p.forEach(v=>{s.terraces[key(v.x,v.z)]=y});}else if(kind==='erase'){const {x,z}=p[0],k=key(x,z),r=s.roads[k], b=occupied(s).get(k);if(b&&isPassage(b.kind)){s.buildings=s.buildings.filter(q=>q.id!==b.id);return true;}if(x===-5&&z===24)return false;if(r?.span){for(const k in s.roads)if(s.roads[k].span===r.span)delete s.roads[k];}else if(r)delete s.roads[k];else if(b)s.buildings=s.buildings.filter(q=>q.id!==b.id);else if(s.plots?.[k])delete s.plots[k];else return false;}else{if(kind==='temple')s.wood-=12;if(isPassage(kind))for(const v of p)s.roads[key(v.x,v.z)]??={kind:'court'};s.buildings.push({kind,x:p[0].x,z:p[0].z,rot,id:++s.id,...(Number.isInteger(variant)&&variant!>=0&&variant!<variants[kind].length?{variant}:{})});if(s.plots)for(const v of p)delete s.plots[key(v.x,v.z)];}return true;}
 export type Journey={temple:number,tiles:string[],effort:number,visits:number,bookings:Map<number,number>};
 export function stats(s:State){
  const net=access(s),front=new Map<number,Map<string,number>>();

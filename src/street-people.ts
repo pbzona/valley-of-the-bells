@@ -1,8 +1,8 @@
 import * as T from 'three';
-import {C,height,pos,neighbors,key,roadSurface,roadTop,type Pos,type State,type PilgrimStop,type streetPlan,type stats} from './sim';
+import {C,height,pos,neighbors,key,roadProfile,sampleRoad,roadTop,type RoadPiece,type State,type PilgrimStop,type streetPlan,type stats} from './sim';
 
 type Point={x:number,y:number,z:number};
-type Step={a:Point,b:Point,duration:number,end:number,stop?:PilgrimStop['kind']|'local',edge?:[Pos,Pos]};
+type Step={a:Point,b:Point,duration:number,end:number,stop?:PilgrimStop['kind']|'local',edge?:RoadPiece[]};
 type Walker={steps:Step[],duration:number,offset:number,group:number,seat:number,pilgrim:boolean};
 const size=68;
 const fabrics=[0x866448,0x698078,0xa89575,0x796982,0x57594c,0x9a634a];
@@ -23,7 +23,7 @@ export class StreetPeople{
  constructor(target:T.Group){for(const m of this.meshes)target.add(m);}
  private mesh(g:T.BufferGeometry,color:number,n=size){const obj=new T.InstancedMesh(g,new T.MeshLambertMaterial({color}),n);obj.instanceMatrix.setUsage(T.DynamicDrawUsage);obj.count=0;obj.frustumCulled=false;return obj;}
  private point(s:State,k:string):Point{const p=pos(k);return {x:p.x*C,z:p.z*C,y:roadTop(s,p)};}
- private route(out:Step[],a:Point,b:Point,duration:number,stop?:Step['stop'],walk=false){const end=(out.at(-1)?.end??0)+duration,edge:Step['edge']=walk?[{x:a.x/C,z:a.z/C},{x:b.x/C,z:b.z/C}]:undefined;out.push({a,b,duration,end,stop,edge});}
+ private route(out:Step[],a:Point,b:Point,duration:number,stop?:Step['stop'],walk=false){const end=(out.at(-1)?.end??0)+duration,edge=walk?roadProfile(this.state!,{x:a.x/C,z:a.z/C},{x:b.x/C,z:b.z/C}):undefined;out.push({a,b,duration,end,stop,edge});}
  plan(s:State,q:ReturnType<typeof stats>,street:ReturnType<typeof streetPlan>){
   const out:Walker[]=[];this.state=s;
   let parties=0,allocated=0;const visitors=Math.min(47,Math.max(0,Math.ceil(q.pilgrims*.93)));
@@ -77,7 +77,7 @@ export class StreetPeople{
    if(step.stop)activeStops.push(step.stop);
    const yaw=Math.abs(dx)+Math.abs(dz)>.01?Math.atan2(dx,dz):(w.group*1.7+w.seat*.43),sin=Math.sin(yaw),cos=Math.cos(yaw);
    const side=(w.pilgrim?(w.seat===0?.21:-.22):.34*(w.seat===0?1:-1));
-   const x=step.a.x+dx*f+cos*side,z=step.a.z+dz*f-sin*side,ground=step.edge?roadSurface(this.state!,step.edge[0],step.edge[1],f):step.a.y+(step.b.y-step.a.y)*f;
+   const x=step.a.x+dx*f+cos*side,z=step.a.z+dz*f-sin*side,ground=step.edge?sampleRoad(step.edge,f):step.a.y+(step.b.y-step.a.y)*f;
    const stride=step.stop?0:Math.sin(t*9+i*1.4)*.102,bob=Math.abs(stride)*.19,y=ground+bob;
    this.m.makeRotationY(yaw);this.m.setPosition(x,y+.332,z);this.body.setMatrixAt(i,this.m);
    this.m.makeTranslation(x,y+.586,z);this.head.setMatrixAt(i,this.m);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fresh, routeTrial, stats, streetPlan, tick, apply, check, cells, line, key, rectangle, roadSurface, roadTreads, roadTop, height } from '../src/sim.ts';
+import { fresh, routeTrial, stats, streetPlan, tick, apply, check, cells, line, key, rectangle, roadSurface, roadTreads, roadTop, height, terrainGrader, roadProfile, terraceEdges, terraceLevel } from '../src/sim.ts';
 const place=(s,k,x,z,r=0)=>apply(s,k,cells(k,x,z,r),r);
 const road=(s,k,x,z,a,b)=>apply(s,k,line({x,z},{x:a,z:b},k==='bridge'));
 test('seeded maps are deterministic, with a working starter economy',()=>{
@@ -104,7 +104,22 @@ test('walking deck joins landings exactly, makes stepped uphill approaches and r
   s.terraces[key(a.x,a.z)]=4;s.terraces[key(b.x,b.z)]=5.1;
   assert.ok(roadTreads(s,a,b)>=5);assert.equal(roadSurface(s,a,b,0),roadTop(s,a));assert.equal(roadSurface(s,a,b,1),roadTop(s,b));
   assert.ok(roadSurface(s,a,b,.72)>roadSurface(s,a,b,.29));
-  for(const t of [.204,.373,.584,.723])assert.ok(roadSurface(s,a,b,t)>=height(s,a.x+t,a.z));
+  assert.ok(apply(s,'road',[a,b]));const grade=terrainGrader(s);
+ for(const t of [.204,.373,.584,.723])assert.ok(roadSurface(s,a,b,t)>=grade(a.x+t,a.z,height(s,a.x+t,a.z)));
+ const sections=roadProfile(s,a,b);assert.ok(sections.every((p,i)=>i===0||Math.abs(p.y0-sections[i-1].y1)<=.20501));
+ for(const t of [.115,.309,.473,.657,.886])assert.ok(Math.abs(roadSurface(s,a,b,t)-roadSurface(s,b,a,1-t))<.00001);
+ delete s.roads[key(a.x,a.z)];delete s.roads[key(b.x,b.z)];
   s.terraces[key(b.x,b.z)]=6.25;
   assert.match(check(s,'road',[a,b]),/Too steep/);assert.match(check(s,'court',[a,b]),/gentler/);
+});
+
+
+test('a steep terrace exposes both cut and fill walls, without seams between equal pads',()=>{
+ const s=fresh(1748),lot=cells('terrace',-18,-13),top=terraceLevel(s,lot);
+ assert.ok(apply(s,'terrace',lot));
+ const edges=lot.flatMap(p=>terraceEdges(s,p,top));assert.equal(edges.length,12);
+ const ground=edges.flatMap(e=>e.points.map(p=>p.y));assert.ok(Math.min(...ground)<top-4);assert.ok(Math.max(...ground)>top+3);
+ s.terraces[key(-19,-13)]=top-1.5;
+ assert.ok(terraceEdges(s,lot[0],top).find(e=>e.dx===-1).points.every(p=>p.y===top-1.5));
+ assert.ok(!terraceEdges(s,{x:-19,z:-13},top-1.5).some(e=>e.dx===1));
 });

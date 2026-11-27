@@ -1,5 +1,5 @@
 import * as T from 'three';
-import {C,LO,HI,height,natural,river,rand,noise,lookOf,neighbors,roadSurface,roadTop,roadTreads, key,pos,dims,cells,corners,type State,type Bld,type Pos,type Route} from './sim';
+import {C,LO,HI,height,natural,river,rand,noise,lookOf,neighbors,roadProfile,roadPad,roadReach,roadTop,terrainGrader,TERRAIN_DIVISIONS,terraceEdges, key,pos,dims,cells,corners,type State,type Bld,type Pos,type Route} from './sim';
 const cube=new T.BoxGeometry(1,1,1).toNonIndexed();
 const con=new T.ConeGeometry(1,1,7).toNonIndexed(), stone=new T.IcosahedronGeometry(1,0).toNonIndexed();
 const bronzeBell=new T.LatheGeometry([[.54,0],[.54,.10],[.45,.16],[.39,.30],[.34,.69],[.31,.91],[.21,1.03],[.11,1.04]].map(([x,y])=>new T.Vector2(x,y)),12).toNonIndexed();
@@ -17,9 +17,66 @@ const terrainMat=new T.MeshLambertMaterial({vertexColors:true,side:T.DoubleSide}
 export const solid=new T.MeshLambertMaterial({vertexColors:true,side:T.DoubleSide});
 export const lamps=new T.MeshBasicMaterial({vertexColors:true,color:0xc5a074});
 const green=[0x858858,0x68774c,0x9a9569,0x586e50,0x68755c], fir=[0x364c40,0x435b42,0x546649,0x2d4940,0x5c6f53], rock=[0x77796c,0x656d67,0x8e8c7d];
-export function ground(s:State){const v=[],colors=[],idx=[],res=170;for(let j=0;j<=res;j++)for(let i=0;i<=res;i++){const x=(i/res-.5)*73,z=(j/res-.5)*73,y=height(s,x,z),n=noise(x*.52,z*.52,s.seed+6), slope=Math.max(Math.abs(natural(x+.2,z,s.seed)-natural(x-.2,z,s.seed)),Math.abs(natural(x,z+.2,s.seed)-natural(x,z-.2,s.seed)));v.push(x*C,y,z*C);col.setHex(y<.25?0xa6946f:y<1.17?0x969365:0x7d8859);if(y>=.25){const blend=noise(x*.13,z*.13,s.seed+83);col.lerp(col2.setHex(0x586b50),blend*.58);col.lerp(col2.setHex(0xa19669),n*.38);}if(y>20||slope>.80){const strata=.5+.5*Math.sin(y*2+x*.16+z*.08+noise(x*.3,z*.3,s.seed+9)*3);col2.setHex(0x676b60).lerp(strataTone,strata*.7);col.lerp(col2,Math.min(.87,Math.max(0,slope-.31)+(y>20?.22:0)));}else if(y>5)col.lerp(col2.setHex(0x697956),.52);col.multiplyScalar(.84+n*.22);colors.push(col.r,col.g,col.b);if(i<res&&j<res){let a=j*(res+1)+i,b=a+res+1;idx.push(a,b,a+1,a+1,b,b+1);}}
- const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));g.setAttribute('color',new T.Float32BufferAttribute(colors,3));g.setIndex(idx);g.computeVertexNormals();return new T.Mesh(g,terrainMat);}
-export function terrace(b:Batch,s:State,{x,z}:Pos,top:number){for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){if(s.terraces[key(x+dx,z+dz)]===top)continue;const low=Math.min(top-.3,natural(x+dx*.48,z+dz*.48,s.seed)-.12);for(let l=0;l<Math.min(8,Math.ceil((top-low)/.45));l++){const y=top-.19-l*.43;for(let i=0;i<4;i++){const n=(i-1.5)*.75, off=rand(x+i,z+l,s.seed)*.12;b.box(x*C+dx*1.47+dz*n,y,z*C+dz*1.47+dx*n,dx?.27:.72,.404,dz?.27:.72,rock[(i+l)%3],0,.87+off);}}}}
+export function ground(s:State,grade=terrainGrader(s)){
+ const v:number[]=[],colors:number[]=[],idx:number[]=[],div=TERRAIN_DIVISIONS,res=73*div,stride=res+1;
+ const base=new Int32Array(stride*stride).fill(-1),pads=new Map<string,number>();
+ function vertex(i:number,j:number,level?:number){
+  const k=j*stride+i,tag=level===undefined?'':`${k}:${level}`,old=level===undefined?base[k]:pads.get(tag)??-1;
+  if(old!==-1)return old;
+  const x=i/div-36.5,z=j/div-36.5,y=grade(x,z,level??natural(x,z,s.seed)),n=noise(x*.52,z*.52,s.seed+6);
+  const slope=level!==undefined?0:Math.max(Math.abs(natural(x+.2,z,s.seed)-natural(x-.2,z,s.seed)),Math.abs(natural(x,z+.2,s.seed)-natural(x,z-.2,s.seed)));
+  const at=v.length/3;if(level===undefined)base[k]=at;else pads.set(tag,at);v.push(x*C,y,z*C);
+  col.setHex(y<.25?0xa6946f:y<1.17?0x969365:0x7d8859);
+  if(y>=.25){col.lerp(col2.setHex(0x586b50),noise(x*.13,z*.13,s.seed+83)*.58);col.lerp(col2.setHex(0xa19669),n*.38);}
+  if(level===undefined&&(y>20||slope>.80)){
+   const strata=.5+.5*Math.sin(y*2+x*.16+z*.08+noise(x*.3,z*.3,s.seed+9)*3);
+   col2.setHex(0x676b60).lerp(strataTone,strata*.7);col.lerp(col2,Math.min(.87,Math.max(0,slope-.31)+(y>20?.22:0)));
+  }else if(y>5)col.lerp(col2.setHex(0x697956),.52);
+  col.multiplyScalar(.84+n*.22);colors.push(col.r,col.g,col.b);return at;
+ }
+ // No triangle spans a terrace boundary: a flat pad and the natural slope each own their edge.
+ for(let z=0;z<73;z++)for(let x=0;x<73;x++){
+  const level=s.terraces[key(x-36,z-36)];
+  for(let j=z*div;j<(z+1)*div;j++)for(let i=x*div;i<(x+1)*div;i++){
+   const a=vertex(i,j,level),b=vertex(i,j+1,level),c=vertex(i+1,j,level),d=vertex(i+1,j+1,level);
+   idx.push(a,b,c,c,b,d);
+  }
+ }
+ const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));g.setAttribute('color',new T.Float32BufferAttribute(colors,3));g.setIndex(idx);g.computeVertexNormals();return new T.Mesh(g,terrainMat);
+}
+export function terrace(b:Batch,s:State,p:Pos,top:number,grade?:(x:number,z:number,y:number)=>number){
+ for(const {dx,dz,points} of terraceEdges(s,p,top))for(let i=0;i<points.length-1;i++){
+  const a=points[i],c=points[i+1];
+  const lowA=grade?.(a.x,a.z,top)??top,lowC=grade?.(c.x,c.z,top)??top;
+  const farA=grade?.(a.x,a.z,a.y)??a.y,farC=grade?.(c.x,c.z,c.y)??c.y;
+  // Clip the wall and its stone courses to the actual opposite edge, on cut AND fill sides.
+  // The backing face runs uninterrupted from one surface to the other, including at corners.
+  const at=(t:number,y:number,offset=0)=>[(a.x+(c.x-a.x)*t)*C+dx*offset,y,(a.z+(c.z-a.z)*t)*C+dz*offset];
+  const adj=(t:number)=>farA+(farC-farA)*t,near=(t:number)=>lowA+(lowC-lowA)*t;
+  const split=(lowA-farA)/((farC-farA)-(lowC-lowA));
+  function face(lo:number,hi:number,fill:boolean){
+   if(hi-lo<1e-6)return;
+   const floor=(t:number)=>Math.min(near(t),adj(t)),ceil=(t:number)=>Math.max(near(t),adj(t));
+   b.quad(at(lo,floor(lo)),at(hi,floor(hi)),at(hi,ceil(hi)),at(lo,ceil(lo)),0x686956);
+   // Facade sits a hair into the lower surface, with the continuous backing visible at the joints.
+   const offset=fill?.018:-.018,step=.38,start=Math.floor(Math.min(floor(lo),floor(hi))/step),end=Math.ceil(Math.max(ceil(lo),ceil(hi))/step);
+   if(end-start>48)return; // Malformed imported heights still get the closed backing face.
+   for(let row=start;row<end;row++){
+    const bottom=row*step+.012,cap=(row+1)*step-.013;
+    const knots=[lo,hi];for(const y of [bottom,cap]){for(const [u,v] of [[farA,farC],[lowA,lowC]]){const t=(y-u)/(v-u);if(t>lo&&t<hi)knots.push(t);}}
+    const joint=(row%2===0?.39:.66);if(joint>lo&&joint<hi)knots.push(joint);knots.sort((u,v)=>u-v);
+    for(let j=0;j<knots.length-1;j++){
+     const u=knots[j]+(j>0&&knots[j]===joint?.009:0),v=knots[j+1]-(knots[j+1]===joint?.009:0);if(v<=u)continue;
+     const l0=Math.max(bottom,floor(u)),l1=Math.max(bottom,floor(v)),h0=Math.max(l0,Math.min(cap,ceil(u))),h1=Math.max(l1,Math.min(cap,ceil(v)));
+     if(Math.max(h0-l0,h1-l1)<.005)continue;
+     const r=rand(p.x*11+i+(u>=joint?18:0),p.z*13+row,s.seed+7);
+     b.quad(at(u,l0,offset),at(v,l1,offset),at(v,h1,offset),at(u,h0,offset),rock[Math.floor(r*3)],.91+r*.19);
+    }
+   }
+  }
+  if(split>0&&split<1){face(0,split,lowA>farA);face(split,1,lowC>farC);}else if(Math.max(Math.abs(lowA-farA),Math.abs(lowC-farC))>1e-6)face(0,1,lowA+lowC>=farA+farC);
+ }
+}
 export function scenery(s:State,used:Set<string>){const b=new Batch();for(let z=-34;z<=34;z++)for(let x=-34;x<=34;x++){const r=rand(x,z,s.seed+41),px=x+(rand(x,z,s.seed+26)-.5)*.82,pz=z+(rand(x,z,s.seed+25)-.5)*.82,y=height(s,px,pz);if(y<.42||used.has(key(x,z))||s.terraces[key(x,z)]!==undefined)continue;
  let density=y>4?.63:y<1.37?.055:.16;density*=.55+noise(x*.17,z*.17,s.seed+120)*.85;if(r<density){const tall=(1.4+rand(x,z,73)*3.6)*(y>3?1.23:.8);const pine=r>.07||y>5,color=pine?fir[Math.floor(rand(x,z,27)*fir.length)]:[0x98754d,0xa86a4e,0x8e8050][x*x%3]; const tx=px*C,tz=pz*C;b.box(tx,y+tall*.29,tz,tall*.075,tall*.68,tall*.075,0x564536,r*8);if(pine)for(let i=0;i<4;i++){const w=tall*(.29-i*.051);b.shape(con,tx,y+tall*(.47+i*.17),tz,w,tall*(.51-i*.043),w,color,r*20+i*.55,.86+i*.09);}else{for(let i=0;i<4;i++)b.shape(stone,tx+Math.sin(i*2.4)*tall*.32,y+tall*(.57+i*.12),tz+Math.cos(i*2.4)*tall*.28,tall*.38,tall*.38,tall*.36,color,i,.8+i*.1);}}
  else if(r>.87&&y>1.6){const a=.15+(r-.87)*7;b.shape(stone,px*C,y-.07,pz*C,a,a*.7,a*.91,rock[Math.floor(rand(x,z,99)*3)],r*18,.85+rand(x,z,91)*.3);}else if(r>.58&&y<1.5){for(let i=0;i<3;i++)b.shape(con,px*C+i*.13,y+.13,pz*C-i*.15,.08,.32+i*.06,.08,0x9d9b62,i);}}
@@ -235,56 +292,58 @@ export function building(out:Batch, lit:Batch,s:State,b:Bld){const dim=dims(b.ki
  }
 
 }
-export function path(batch:Batch,s:State,p:Pos,r:Route,net=true,preview?:Set<string>){
+export function path(batch:Batch,s:State,p:Pos,r:Route,net=true,preview?:Set<string>,grade?:(x:number,z:number,y:number)=>number){
  const {x,z}=p,X=x*C,Z=z*C,Y=r.y??height(s,x,z),stoneColor=net?0xa39b82:0x9c886e;
  if(r.kind==='bridge'){
   const a=r.axis==='x'?Math.PI/2:0;
-  for(let i=-3;i<=3;i++)batch.box(X+Math.sin(a)*i*.426,Y+.03,Z+Math.cos(a)*i*.426,1.94,.22,.408,0x8e664c,a,.88+(i+3)*.027);
+  for(let i=-3;i<=3;i++)batch.box(X+Math.sin(a)*i*.426,Y+.03,Z+Math.cos(a)*i*.426,1.94,.22,.432,0x8e664c,a,.88+(i+3)*.027);
   for(const si of [-1,1]){const xx=X+si*Math.cos(a)*.96,zz=Z-si*Math.sin(a)*.96,low=Math.min(Y-.1,height(s,x,z));batch.box(xx,(Y+low)/2,zz,.16,Y-low+1.3,.16,red);batch.box(xx,Y+.58,zz,.13,.14,3.0,red,a);batch.box(xx,Y+.26,zz,.08,.07,3.0,wood,a);}
   return;
  }
- const pl=r.kind==='court',groundY=roadTop(s,p,r);
+ const court=r.kind==='court',Y0=roadTop(s,p,r),grid=court?6:3;
  const get=(a:Pos):Route|undefined=>preview?.has(key(a.x,a.z))?{kind:r.kind}:s.roads[key(a.x,a.z)];
- const extent=(p:Pos)=>({x:neighbors(p).some(a=>a.x!==p.x&&get(a))?.99:.49,z:neighbors(p).some(a=>a.z!==p.z&&get(a))?.99:.49});
- const e=extent(p),padX=pl?1.48:e.z,padZ=pl?1.48:e.x;
- function padY(wx:number,wz:number){
-  const ax=(wx-X),az=(wz-Z),n=Math.abs(ax/padX)>Math.abs(az/padZ)?{x:x+Math.sign(ax),z}:{x,z:z+Math.sign(az)},route=get(n);
-  return pl?Math.max(groundY-.19,height(s,wx/C,wz/C)+.096):Math.max(route?roadSurface(s,p,n,(n.x!==x?Math.abs(ax):Math.abs(az))/C,r,route):groundY,height(s,wx/C,wz/C)+.074);
- }
- const grid=pl?6:3;
- for(let i=0;i<grid;i++)for(let j=0;j<grid;j++){
-  const x0=X-padX+(i+.02)*padX*2/grid,x1=X-padX+(i+.98)*padX*2/grid,z0=Z-padZ+(j+.02)*padZ*2/grid,z1=Z-padZ+(j+.98)*padZ*2/grid;
-  const a=[x0,padY(x0,z0),z0],b=[x0,padY(x0,z1),z1],c=[x1,padY(x1,z1),z1],d=[x1,padY(x1,z0),z0];
-  batch.quad(a,b,c,d,pl?0xa8a498:stoneColor,.90+rand(x*7+i,z*7+j,s.seed+3)*.17);
+ const wx=roadPad(s,p,'x',r,get),wz=roadPad(s,p,'z',r,get);
+ const link=(a:Pos)=>{
+  const o=get(a);if(!o||Math.abs(roadTop(s,a,o)-Y0)>2.60)return;
+  if(o.kind==='bridge'&&(a.x!==x?'x':'z')!==o.axis)return;return o;
+ };
+ const pad=(wx:number,wz:number)=>court?height(s,wx/C,wz/C)+.10:Y0;
+ const support=(a:number[],c:number[],color:number)=>{
+  const floor=(k:number[])=>[k[0],Math.min(k[1]-.09,(grade?.(k[0]/C,k[2]/C,height(s,k[0]/C,k[2]/C))??height(s,k[0]/C,k[2]/C))-.095),k[2]];
+  batch.quad(a,c,floor(c),floor(a),color);
+ };
+ for(let j=0;j<grid;j++)for(let i=0;i<grid;i++){
+  const x0=X-wx+i*wx*2/grid,x1=X-wx+(i+1)*wx*2/grid,z0=Z-wz+j*wz*2/grid,z1=Z-wz+(j+1)*wz*2/grid;
+  const a=[x0,pad(x0,z0),z0],b=[x0,pad(x0,z1),z1],c=[x1,pad(x1,z1),z1],d=[x1,pad(x1,z0),z0];
+  batch.quad(a,b,c,d,court?0xa8a498:stoneColor,.88+rand(x*7+i,z*7+j,s.seed+3)*.20);
+  if(i===0&&!link({x:x-1,z}))support(b,a,0x817a64);
+  if(i===grid-1&&!link({x:x+1,z}))support(d,c,0x817a64);
+  if(j===0&&!link({x,z:z-1}))support(a,d,0x817a64);
+  if(j===grid-1&&!link({x,z:z+1}))support(c,b,0x817a64);
  }
  for(const q of neighbors(p)){
-  const k=key(q.x,q.z),virtual=!!preview?.has(k),r2=virtual?{kind:r.kind}:s.roads[k];if(!r2)continue;
-  const dx=q.x-x,dz=q.z-z;if(r2.kind==='bridge'&&((dx!==0?'x':'z')!==r2.axis))continue;
-  if(!preview&&r2.kind!=='bridge'&&(dx<0||dz<0))continue;
-  if(preview&&virtual&&(dx<0||dz<0))continue;
-  if(Math.abs(roadTop(s,p,r)-roadTop(s,q,r2))>2.47)continue;
-  const B=r2.kind==='court',P=r2.kind==='bridge';
-  if(pl&&B)continue;
-  const end=extent(q), high=P?2.63:B?1.55:C-(dx?end.z:end.x)+.023,low=pl?1.44:(dx?padX:padZ)-.023;if(high<=low)continue;
-  const treads=roadTreads(s,p,q,r,r2),samples=treads?treads+1:6;
-  const pt=(s:number,v:number,y:number)=>[X+dx*s+dz*v,y,Z+dz*s-dx*v];
-  const F=(length:number)=>roadSurface(s,p,q,length/C,r,r2);
-  for(let i=0;i<samples;i++){
-   const a=Math.max(low,i*C/samples),b=Math.min(high,(i+1)*C/samples);if(b<=a)continue;
-   const w0=P?.93:.97,w1=w0;
-   let y0=F(a+.001),y1=F(b-.001);
-   if(treads)y0=y1=Math.max(y0,y1);
+  const r2=link(q);if(!r2)continue;
+  const k=key(q.x,q.z),dx=q.x-x,dz=q.z-z,virtual=!!preview?.has(k);
+  if((!preview||virtual)&&r2.kind!=='bridge'&&(dx<0||dz<0))continue;
+  if(court&&r2.kind==='court')continue;
+  const axis=dx?'x':'z';
+  const lo=roadReach(s,p,axis,r,get),hi=1-roadReach(s,q,axis,r2,get),width=.96;
+  const pt=(s:number,v:number,y:number)=>[X+dx*s*C+dz*v,y,Z+dz*s*C-dx*v];
+  let prev:number|undefined;
+  for(const [i,seg] of roadProfile(s,p,q,r,r2,get).entries()){
+   const a=Math.max(lo,seg.from),b=Math.min(hi,seg.to);if(b-a<1e-6)continue;
+   const f=(t:number)=>seg.y0+(seg.y1-seg.y0)*((t-seg.from)/(seg.to-seg.from));
+   const y0=f(a),y1=f(b);
+   if(prev!==undefined&&Math.abs(prev-y0)>1e-6)batch.quad(pt(a,-width,prev),pt(a,-width,y0),pt(a,width,y0),pt(a,width,prev),0x7e7764);
    for(let lane=0;lane<3;lane++){
-    const t=lane/3*2-1,u=(lane+1)/3*2-1;
-    batch.quad(pt(a,w0*t+.009,y0),pt(b,w1*t+.009,y1),pt(b,w1*u-.009,y1),pt(a,w0*u-.009,y0),stoneColor,.91+rand(x*17+lane,z*21+i,s.seed+99)*.14);
+    const u=width*(lane*2/3-1),v=u+width*2/3;
+    batch.quad(pt(a,u,y0),pt(b,u,y1),pt(b,v,y1),pt(a,v,y0),stoneColor,.89+rand(x*17+lane,z*21+i,s.seed+99)*.18);
    }
-   if(treads&&i>0&&a===i*C/samples){const prev=F(a-.003);batch.quad(pt(a,-w0,prev-.025),pt(a,-w0,y0),pt(a,w0,y0),pt(a,w0,prev-.025),0x7e7764);}
-   for(const side of [-1,1]){
-    const c=pt(a,side*w0,y0),d=pt(b,side*w1,y1),L=Math.min(c[1]-.07,height(s,c[0]/C,c[2]/C)-.039),R=Math.min(d[1]-.07,height(s,d[0]/C,d[2]/C)-.039);
-    batch.quad(c,d,[d[0],R,d[2]],[c[0],L,c[2]],0x857d6b,.88+rand(x,z,i+99)*.21);
-   }
+   for(const side of [-1,1])support(pt(a,side*width,y0),pt(b,side*width,y1),0x857d6b);
+   prev=y1;
   }
  }
+
 }
 export function gate(b:Batch,s:State){const x=-5*C,z=24*C,y=height(s,-5,24);for(const si of [-1,1]){b.box(x+si*1.48,y+1.69,z,.34,3.4,.37,red);b.box(x+si*1.48,y+.16,z,.56,.35,.56,stoneBase);}b.box(x,y+2.68,z,3.85,.26,.27,red);b.box(x,y+3.37,z,4.49,.33,.39,red);b.box(x,y+3.59,z,5.03,.15,.58,trim);b.box(x,y+3.07,z,1.03,.51,.19,trim);}
 export function waterMesh(s:State){const pts=[],idx=[];for(let i=0;i<=150;i++){const z=-37+74*i/150,x=river(z,s.seed);pts.push((x-5.3)*C,.073,z*C,(x+5.3)*C,.073,z*C);if(i<150){const p=i*2;idx.push(p,p+2,p+1,p+1,p+2,p+3);}}const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pts,3));g.setIndex(idx);const material=new T.ShaderMaterial({uniforms:{t:{value:0},night:{value:0},mist:{value:new T.Color(0xbfc4ad)}},vertexShader:`varying vec3 w;varying float d;void main(){w=position;vec4 p=modelViewMatrix*vec4(position,1.);d=-p.z;gl_Position=projectionMatrix*p;}`,fragmentShader:`varying vec3 w;varying float d;uniform float t,night;uniform vec3 mist;void main(){ float r=sin(w.z*1.83+w.x*.24+t*.83+sin(w.x*.57+w.z*.09)*1.3);float s=sin(w.x*.92+w.z*.64-t*.76);float glint=smoothstep(.85,1.,r*s);vec3 a=mix(vec3(.23,.39,.35),vec3(.05,.15,.20),night);vec3 b=mix(vec3(.48,.6,.53),vec3(.15,.26,.33),night);vec3 cl=mix(a,b,.35+.12*r+.06*s)+glint*.061;gl_FragColor=vec4(mix(cl,mist,smoothstep(43.,170.,d)),1.);}`,side:T.DoubleSide});return new T.Mesh(g,material);}
