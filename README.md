@@ -28,6 +28,14 @@ Use Node 22.13+ (or current LTS). The Vite build produces a standalone `dist/ind
 - **1–0** selects construction, **R** rotates, **Esc** cancels, **Space** plays/pauses, **N** toggles dusk, and **H** hides the interface. Right drag orbits; hold WASD or the arrow keys to pan, or drag with middle mouse or Shift + right mouse. On touch, drag to pan or draw the selected road/bridge and pinch to zoom.
 - Save data stays in the browser. Settings has JSON import/export and seed selection.
 
+## Competing goals (experimental)
+
+- **Temple renown** rises toward a target set by how calm the temple's sacred approach is. That approach runs from the last temple gate on a route, or covers the final eight tiles. Lanterns, gardens, temple pieces, courts, and open land calm it. Shops, workshops, farms, inns, carts, and crowds disturb it. Renown has five ranks; each unlocks temple pieces and larger crowds.
+- **Three pilgrim types** each choose their own route. Pilgrims take the easiest walk and shop. Patrons arrive once the temple is known, avoid stairs and carts, and only stay at a cart-free inn on their road; they pay inn fees and spend well. Ascetics come for a calm approach, climb anything, avoid trade, and count double toward renown.
+- **Freight:** staffed farms and workshops send handcarts to the nearest market or stall. Carts cannot use stairs. Sellers without deliveries sell half stock, and pilgrim crowds on cart roads slow deliveries. Carts cost nearby inns beds and keep patrons away.
+- **Seasons:** the Bell Festival (spring) and Lantern Festival (autumn) double ordinary pilgrims for five days. In winter, patrons stay home and ascetics come for retreats.
+- Press **T** for the route view: each visitor type and freight has its own color, and calm markers show how quiet each tile of the approach is.
+
 ## Source layout
 
 - `src/sim.ts`: terrain, placement validation, road connectivity, and economy.

@@ -3,7 +3,7 @@ import './style.css';
 import {StreetPeople} from './street-people';
 import {shopfront,hangingLanterns,contactShadows,lanternPools} from './street-art';
 import {icon} from './icons';
-import {LO,HI,C, specs, key, pos, height, inside, cells, check, apply, fresh, routeTrial, stats, streetPlan, tick, line, quote, rand, neighbors, occupied, dims, isProp, isKind, frontage, variants, lookOf, buildingName, canAdvance, nextStage, beds, upgradeTimber, UPGRADE_DAYS, TIMBER_RESERVE, rectangle, roadSurface, isPassage, terraceLevel, terrainGrader, type State, type Tool, type Pos, type Kind} from './sim';
+import {LO,HI,C, specs, key, pos, height, inside, cells, check, apply, fresh, routeTrial, stats, streetPlan, tick, line, quote, rand, neighbors, occupied, dims, isProp, isKind, frontage, variants, lookOf, buildingName, canAdvance, nextStage, beds, upgradeTimber, UPGRADE_DAYS, TIMBER_RESERVE, rectangle, roadSurface, roadTop, isPassage, terraceLevel, terrainGrader, RANKS, rankOf, unlockRank, calendar, pilgrimInfo, type Pilgrim, type State, type Tool, type Pos, type Kind} from './sim';
 import {Batch,ground,scenery,terrace,building,path,gate,waterMesh,solid,lamps} from './art';
 const $=<E extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as E;
 const SAVE='valley-of-bells-v1';
@@ -32,18 +32,25 @@ function plotMark(b:Batch,{x,z}:Pos){
 }
 const trailMaterial=new T.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.9,depthWrite:false,side:T.DoubleSide});
 const missingCut=()=>s.trial&&[-10,-9,-8,-7,-6].some(x=>!s.roads[key(x,13)]);
+const routeColor:Record<Pilgrim|'cart',number>={common:0xf1c781,patron:0xe0897a,ascetic:0xeef3f0,cart:0x9a7048};
 function updateTraffic(){
- const paths=q.journeys.filter(j=>j.visits>0);
- clear(traffic);if(!showTraffic){updateTrialLabel();return;}
- const b=new Batch();const drawn=new Set<string>();
- for(const j of paths)for(let i=1;i<j.tiles.length;i++){
-  const a=j.tiles[i-1],c=j.tiles[i],token=[a,c].sort().join('/');if(drawn.has(token))continue;drawn.add(token);
-  const u=pos(a),v=pos(c),dx=v.x-u.x,dz=v.z-u.z,w=Math.min(.36,.12+(q.flow.get(c)??0)*.012);
-  for(let n=1;n<=3;n++){
-   const f=n*.25,x=u.x+dx*f,z=u.z+dz*f,land=height(s,x,z);
-   const y=roadSurface(s,u,v,f)+.095;
-   b.box(x*C,y,z*C,dx?.40:w,.04,dz?.40:w,0xf1c781);
+ clear(traffic);$('legend').classList.toggle('hidden',!showTraffic);if(!showTraffic){updateTrialLabel();return;}
+ const b=new Batch(),drawn=new Set<string>();
+ const lane=(tiles:string[],color:number,offset:number,width:(k:string)=>number,tag:string)=>{
+  for(let i=1;i<tiles.length;i++){
+   const a=tiles[i-1],c=tiles[i],token=tag+[a,c].sort().join('/');if(drawn.has(token))continue;drawn.add(token);
+   const u=pos(a),v=pos(c),dx=v.x-u.x,dz=v.z-u.z,w=width(c);
+   for(let n=1;n<=3;n++){const f=n*.25,x=u.x+dx*f+dz*offset,z=u.z+dz*f-dx*offset;b.box(x*C,roadSurface(s,u,v,f)+.095,z*C,dx?.40:w,.04,dz?.40:w,color);}
   }
+ };
+ const offsets:Record<Pilgrim,number>={common:0,patron:.11,ascetic:-.11};
+ for(const j of q.journeys)if(j.visits>0)lane(j.tiles,routeColor[j.type],offsets[j.type],k=>Math.min(.34,.09+j.visits*.012),j.type);
+ for(const r of q.cartRoutes)lane(r.tiles,routeColor.cart,.2,()=>.11+r.carts*.03,'cart');
+ // Calm markers along each sacred approach: green is calm, red is disturbed.
+ const marked=new Set<string>(),warm=new T.Color(),cool=new T.Color();
+ for(const j of q.journeys)for(const k of j.approach){if(marked.has(k))continue;marked.add(k);
+  const p=pos(k),calm=q.calmAt(k,q.flow.get(k));warm.setHex(0xd76a4c);cool.setHex(0x8fd17a);warm.lerp(cool,calm);
+  b.box((p.x-.36)*C,roadTop(s,p)+.12,(p.z-.36)*C,.30,.07,.30,warm.getHex());
  }
  if(missingCut())for(let i=1;i<18;i++){const x=-5-i/3,z=13;b.box(x*C,height(s,x,z)+.13,z*C,.38,.043,.11,0x9aced0);}
  if(b.p.length)traffic.add(b.mesh(trailMaterial));updateTrialLabel();dirty=true;
@@ -72,26 +79,39 @@ const groups:{label:string,glyph:Tool,tools:Tool[]}[]=[
 ];
 let group=-1;
 function toolbar(){
- const toolButton=(k:Tool,classes='')=>`<button class="${classes}${tool===k?' active':''}" data-tool="${k}" aria-pressed="${tool===k}" title="${specs[k].hint}"><span class="hotkey">${keys[names.indexOf(k)].toUpperCase()}</span><span class="icon">${icon(k)}</span><span class="label">${specs[k].name}</span></button>`;
+ const toolButton=(k:Tool,classes='')=>`<button class="${classes}${tool===k?' active':''}" data-tool="${k}" aria-pressed="${tool===k}" title="${specs[k].hint}${unlockRank[k]!==undefined?` Unlocks at ${RANKS[unlockRank[k]!].name}.`:''}"><span class="lock" aria-hidden="true">◆</span><span class="hotkey">${keys[names.indexOf(k)].toUpperCase()}</span><span class="icon">${icon(k)}</span><span class="label">${specs[k].name}</span></button>`;
  const categories=$('categories');if(!categories.firstChild)categories.innerHTML=groups.map((g,i)=>`<button data-group="${i}" aria-controls="subtools" aria-expanded="false"><span class="icon">${icon(g.glyph)}</span><span class="label">${g.label}</span></button>`).join('')+toolButton('erase');
  for(const b of categories.querySelectorAll<HTMLButtonElement>('button')){
   if(b.dataset.group!==undefined){const on=+b.dataset.group===group;b.classList.toggle('active',on);b.setAttribute('aria-expanded',String(on));}
   else {b.classList.toggle('active',tool==='erase');b.setAttribute('aria-pressed',String(tool==='erase'));}
  }
  const sub=$('subtools');if(sub.dataset.group!==String(group)){sub.dataset.group=String(group);sub.hidden=group<0;sub.innerHTML=group<0?'':groups[group].tools.map(k=>toolButton(k)).join('');}
- for(const b of sub.querySelectorAll<HTMLButtonElement>('button')){const on=b.dataset.tool===tool;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));}
+ for(const b of sub.querySelectorAll<HTMLButtonElement>('button')){const on=b.dataset.tool===tool,need=unlockRank[b.dataset.tool as Tool];b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));b.classList.toggle('locked',need!==undefined&&rankOf(s.renown)<need);}
 }
 function setTool(k:Tool|null,next=k===null?-1:groups.findIndex(g=>g.tools.includes(k))){tool=k;group=next;chosen=undefined;inspected=undefined;rot=0;choice=undefined;dragStart=null;toolbar();paint();describe();preview();}
 $('tools').addEventListener('click',e=>{const b=(e.target as HTMLElement).closest('button');if(!b)return;if(b.dataset.group!==undefined){const i=+b.dataset.group;setTool(null,group===i?-1:i);return;}const k=b.dataset.tool as Tool|undefined;if(k)setTool(k===tool?null:k,k===tool?group:undefined);});
 toolbar();
 const signed=(v:number)=>`${v<0?'−':'+'}${Math.abs(v)}`;
-function paint(){q=stats(s);updateTraffic();updateStreet();const selected=s.buildings.find(b=>b.id===chosen);const m=[[Math.floor(s.coin),'Treasury'],[s.rice,'Rice'],[s.wood,'Timber'],[`${s.pop} / ${q.cap}`,'Residents'],[q.pilgrims,'Pilgrims']];$('metrics').innerHTML=m.map(([val,label])=>`<div class="metric"><strong>${val}</strong><small>${label}</small></div>`).join(''); const day=(s.day-1)%120, season=['Spring','Summer','Autumn','Winter'][Math.floor(day/30)];$('date').textContent=`${season} · Day ${day%30+1}`;$('report').innerHTML=[['Treasury / day',q.income],['Rice / day',q.rice],['Timber / day',q.wood]].map(([k,v])=>`<span>${k}</span><b class="${Number(v)<0?'loss':'gain'}">${signed(Number(v))}</b>`).join('')+(q.touristTrade?`<span>Pilgrim trade included</span><b class="gain">+${q.touristTrade}</b>`:'');
- const goal=q.pilgrims?[s.trial?'Two Approaches':'Pilgrimage open',missingCut()?'The market road works. Try connecting the two ends of the dashed shortcut.':'Toggle the route view or select a stall to see where visitors spend.']:q.halls===0?['Open a pilgrimage','Build a mountain temple and connect it to the South Gate.']:['Welcome the pilgrims','Grow to 16 residents. Inns along the approach bring more visitors.'];
+function renownPanel(){
+ const el=$('renown'),cal=q.calendar,fest=cal.festival?`<div class="festival now">${cal.festival} · day ${cal.festivalDay} of 5</div>`:cal.index===3?`<div class="festival">Winter: patrons stay home, ascetics come for retreats</div>`:`<div class="festival">${cal.next.name} in ${cal.next.in} days</div>`;
+ if(!q.halls){el.innerHTML=fest;return;}
+ const r=s.renown??0,count=(t:Pilgrim)=>q.visitors(t);
+ el.innerHTML=`<div class="renown-head"><span>Temple renown</span><b>${RANKS[q.rank].name}</b></div><div class="bar" title="Renown ${Math.round(r)}; heading toward ${Math.round(q.renownTarget)}"><i style="width:${r}%"></i><b style="left:${q.renownTarget}%"></b></div><div class="renown-sub">Calm ${Math.round(q.serenity*100)}% · ${count('common')} pilgrims · ${count('patron')} patrons · ${count('ascetic')} ascetics</div>${fest}`;
+}
+function paint(){q=stats(s);updateTraffic();updateStreet();const selected=s.buildings.find(b=>b.id===chosen);const m=[[Math.floor(s.coin),'Treasury'],[s.rice,'Rice'],[s.wood,'Timber'],[`${s.pop} / ${q.cap}`,'Residents'],[q.pilgrims,'Pilgrims']];$('metrics').innerHTML=m.map(([val,label])=>`<div class="metric"><strong>${val}</strong><small>${label}</small></div>`).join(''); const cal=q.calendar;$('date').textContent=`${cal.season} · Day ${cal.date}`;$('report').innerHTML=[['Treasury / day',q.income],['Rice / day',q.rice],['Timber / day',q.wood]].map(([k,v])=>`<span>${k}</span><b class="${Number(v)<0?'loss':'gain'}">${signed(Number(v))}</b>`).join('')+(q.touristTrade?`<span>Pilgrim trade included</span><b class="gain">+${q.touristTrade}</b>`:'')+(q.innFees?`<span>Patron inn fees</span><b class="gain">+${q.innFees}</b>`:'');
+ renownPanel();
+ const rank=q.rank,next=RANKS[rank+1],unlocks=next?[...(rank===0?['patrons']:[]),...(Object.entries(unlockRank) as [Tool,number][]).filter(([,r])=>r===rank+1).map(([k])=>specs[k].name.toLowerCase())]:[];
+ const goal=q.pilgrims?(missingCut()?['Two Approaches','The market road works. Try connecting the two ends of the dashed shortcut.']:next?[`Toward ${next.name}`,`Renown ${Math.round(s.renown??0)} / ${next.at}${unlocks.length?` unlocks ${unlocks.join(' and ')}`:''}. ${q.serenity<.5?'The approach is noisy: keep trade and carts away from the last stretch to the temple, and line it with lanterns and gardens.':'Draw more visitors along the calm approach.'}`]:['Head temple','The valley’s temple is renowned. Keep the approach calm through the festivals.']):q.halls===0?['Open a pilgrimage','Build a mountain temple and connect it to the South Gate.']:['Welcome the pilgrims','Grow to 16 residents. Inns along the approach bring more visitors.'];
  const live=selected&&q.live.includes(selected), journey=q.journeys.find(j=>j.temple===selected?.id);
  const label=selected?`${selected.tier===2&&selected.kind!=='stall'?'Two-storey ':''}${buildingName(selected)}`:inspected&&s.plots?.[inspected]?'Reserved frontage':inspected&&s.roads[inspected]?'Street traffic':goal[0];
- const detail=selected?(isPassage(selected.kind)?'Walk-through temple piece · no staffing':isProp(selected.kind)?'Decoration · no road needed':!live?'No road to the South Gate':journey?`${journey.visits} pilgrims/day · ${journey.tiles.length-1} road tiles from gate`:selected.kind==='inn'?`${q.lodging.get(selected.id)??0} guests lodge each day · ${q.passing(selected.id)} pilgrims pass`:['market','stall'].includes(selected.kind)?`${q.passing(selected.id)} pilgrims pass each day${q.trade.get(selected.id)?` · +${q.trade.get(selected.id)} mon` : ''}`:'Connected to the South Gate'):inspected&&s.plots?.[inspected]?(frontage(s,[pos(inspected)],q.net).size?'Waiting for demand. Homes need two reserved tiles deep; stalls need passing pilgrims.':'No connected road frontage yet.'):inspected&&s.roads[inspected]?`${q.flow.get(inspected)??0} pilgrims pass each day`:goal[1];
+ const detail=selected?(isPassage(selected.kind)?'Walk-through temple piece · no staffing':isProp(selected.kind)?'Decoration · no road needed':!live?'No road to the South Gate':selected.kind==='temple'?(['common','patron','ascetic'] as Pilgrim[]).map(t=>`${q.journeys.filter(j=>j.temple===selected.id&&j.type===t).reduce((n,j)=>n+j.visits,0)} ${pilgrimInfo[t].name.toLowerCase()}`).join(' · '):selected.kind==='inn'?`${q.lodging.get(selected.id)??0} guests lodge each day · ${q.passing(selected.id)} pilgrims pass`:['market','stall'].includes(selected.kind)?`${q.passing(selected.id)} pilgrims pass each day${q.trade.get(selected.id)?` · +${q.trade.get(selected.id)} mon` : ''}`:'Connected to the South Gate'):inspected&&s.plots?.[inspected]?(frontage(s,[pos(inspected)],q.net).size?'Waiting for demand. Homes need two reserved tiles deep; stalls need passing pilgrims.':'No connected road frontage yet.'):inspected&&s.roads[inspected]?`${q.flow.get(inspected)??0} pilgrims · ${q.freight.get(inspected)??0} carts each day · calm ${Math.round(q.calmAt(inspected,q.flow.get(inspected))*100)}%`:goal[1];
  let extra='';
  if(selected){
+  const say=(t:string)=>{extra+=`<div class="look-readout">${t}</div>`;};
+  if(selected.kind==='temple'){const jj=q.journeys.filter(j=>j.temple===selected.id);if(jj.length)say(`Approach calm ${Math.round(Math.max(...jj.map(j=>j.serenity))*100)}% over ${Math.max(...jj.map(j=>j.approach.length))} tiles${q.gated?' · gated':''}`);}
+  if((selected.kind==='farm'||selected.kind==='work')&&live){const r=q.cartRoutes.find(r=>r.from===selected.id),to=r&&s.buildings.find(b=>b.id===r.to);say(r&&to?`Carts haul ${r.goods} to the ${buildingName(to).toLowerCase()} · ${r.tiles.length} tiles`:q.stranded.includes(selected.id)?'No cart route to a market or stall. Carts cannot use stairs.':'Unstaffed');}
+  if((selected.kind==='market'||selected.kind==='stall')&&q.supply.has(selected.id)){const f=q.supply.get(selected.id)!;say(f===.5?'No cart deliveries: selling half stock':f<.97?`Deliveries slowed by crowds · ${Math.round(f*100)}% stock`:'Fully stocked by cart');}
+  if(selected.kind==='inn'&&live&&[...q.front.get(selected.id)!.keys()].some(k=>q.freight.get(k)))say('Carts outside: fewer beds, and patrons stay away');
   const style=variants[selected.kind][lookOf(s.seed,selected)],cap=beds(selected);
   const sub=(selected.kind==='stall'&&selected.tier===2?'Permanent shop':style)+(cap?` · ${cap} residents`:'');
   extra=`<div class="look-readout">${sub}</div>`;
@@ -168,7 +188,7 @@ function replace(n:State){s=n;focus.set(-12,1,38);radius=63;az=.66;el=.49;world.
 panel.addEventListener('click',e=>{const action=(e.target as HTMLElement).closest('button')?.dataset.act;if(action==='close')panel.close();if(action==='trial'){rate=0;replace(routeTrial());focus.set(-24,4,31);radius=78;az=.64;el=.54;if(!showTraffic)toggleTraffic();updateCamera();panel.close();notify('Trial paused · Follow the gold route, or build the dashed shortcut.');}if(action==='roll')$<HTMLInputElement>('seed').value=String(1+Math.floor(Math.random()*999999));if(action==='new'){const n=$<HTMLInputElement>('seed').valueAsNumber;if(Number.isSafeInteger(n)&&n>0&&n<=2147483647){replace(fresh(n));panel.close();notify('A new valley');}}if(action==='export'){const url=URL.createObjectURL(new Blob([JSON.stringify(s,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`valley-${s.seed}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}if(action==='import')$<HTMLInputElement>('importfile').click();});
 panel.addEventListener('change',async e=>{const f=(e.target as HTMLInputElement).files?.[0];if(!f)return;try{const n=JSON.parse(await f.text());if(!validSave(n))throw Error('bad save');replace(n);panel.close();notify('Valley restored');}catch{panel.close();notify('Invalid valley save',true);}});
 const validLook=(kind:Kind,i:number)=>Number.isInteger(i)&&i>=0&&i<variants[kind].length;
-function validSave(n:any):n is State{const num=(v:any)=>Number.isFinite(v)&&v>=0;const k=(v:string)=>/^-?\d+,-?\d+$/.test(v)&&inside(pos(v).x,pos(v).z);return n&&Number.isInteger(n.seed)&&n.seed>0&&(n.trial===undefined||n.trial===true)&&[n.id,n.day,n.coin,n.rice,n.wood,n.pop].every(num)&&n.roads&&typeof n.roads==='object'&&Object.entries(n.roads).every(([a,r]:[string,any])=>k(a)&&r&&['road','court','bridge'].includes(r.kind)&&(r.kind!=='bridge'||(Number.isFinite(r.y)&&num(r.span)&&['x','z'].includes(r.axis))))&&n.terraces&&typeof n.terraces==='object'&&Object.entries(n.terraces).every(([a,y])=>k(a)&&Number.isFinite(y))&&(n.plots===undefined||(n.plots&&typeof n.plots==='object'&&!Array.isArray(n.plots)&&Object.entries(n.plots).every(([a,v])=>k(a)&&v===true)))&&Array.isArray(n.buildings)&&n.buildings.length<=500&&n.buildings.every((b:any)=>b&&isKind(b.kind)&&Number.isInteger(b.x)&&Number.isInteger(b.z)&&Number.isInteger(b.rot)&&b.rot>=0&&b.rot<=3&&num(b.id)&&(b.style===undefined||(Number.isFinite(b.style)&&b.style>=0&&b.style<1))&&(b.variant===undefined||validLook(b.kind,b.variant))&&(b.tier===undefined||(b.tier===2&&['home','rowhouse','stall'].includes(b.kind)))&&(b.progress===undefined||(Number.isInteger(b.progress)&&b.progress>=0&&b.progress<=UPGRADE_DAYS))&&(b.specialty===undefined||(b.kind==='stall'&&b.tier===2&&['tea','rice','timber'].includes(b.specialty)))&&cells(b.kind,b.x,b.z,b.rot).every(v=>inside(v.x,v.z)));}
+function validSave(n:any):n is State{const num=(v:any)=>Number.isFinite(v)&&v>=0;const k=(v:string)=>/^-?\d+,-?\d+$/.test(v)&&inside(pos(v).x,pos(v).z);return n&&Number.isInteger(n.seed)&&n.seed>0&&(n.trial===undefined||n.trial===true)&&(n.renown===undefined||(Number.isFinite(n.renown)&&n.renown>=0&&n.renown<=100))&&[n.id,n.day,n.coin,n.rice,n.wood,n.pop].every(num)&&n.roads&&typeof n.roads==='object'&&Object.entries(n.roads).every(([a,r]:[string,any])=>k(a)&&r&&['road','court','bridge'].includes(r.kind)&&(r.kind!=='bridge'||(Number.isFinite(r.y)&&num(r.span)&&['x','z'].includes(r.axis))))&&n.terraces&&typeof n.terraces==='object'&&Object.entries(n.terraces).every(([a,y])=>k(a)&&Number.isFinite(y))&&(n.plots===undefined||(n.plots&&typeof n.plots==='object'&&!Array.isArray(n.plots)&&Object.entries(n.plots).every(([a,v])=>k(a)&&v===true)))&&Array.isArray(n.buildings)&&n.buildings.length<=500&&n.buildings.every((b:any)=>b&&isKind(b.kind)&&Number.isInteger(b.x)&&Number.isInteger(b.z)&&Number.isInteger(b.rot)&&b.rot>=0&&b.rot<=3&&num(b.id)&&(b.style===undefined||(Number.isFinite(b.style)&&b.style>=0&&b.style<1))&&(b.variant===undefined||validLook(b.kind,b.variant))&&(b.tier===undefined||(b.tier===2&&['home','rowhouse','stall'].includes(b.kind)))&&(b.progress===undefined||(Number.isInteger(b.progress)&&b.progress>=0&&b.progress<=UPGRADE_DAYS))&&(b.specialty===undefined||(b.kind==='stall'&&b.tier===2&&['tea','rice','timber'].includes(b.specialty)))&&cells(b.kind,b.x,b.z,b.rot).every(v=>inside(v.x,v.z)));}
 function toggleTraffic(){showTraffic=!showTraffic;$('traffic').classList.toggle('active',showTraffic);$('traffic').setAttribute('aria-pressed',String(showTraffic));updateTraffic();dirty=true;if(showTraffic&&!q.pilgrims)notify('Active pilgrim routes will appear here.');}
 $('traffic').onclick=toggleTraffic;
 $('light').onclick=()=>{night=!night;setLight();};$('help').onclick=()=>show('help');$('menu').onclick=()=>show('menu');
@@ -191,9 +211,11 @@ window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camer
 let lastT=0,clock=0, simClock=0,lastDraw=0;
 function draw(t:number){water.material.uniforms.t.value=t;walkers.update(t);renderer.render(scene,camera);dirty=false;}
 function liveDay(){
- const ready=s.buildings.filter(b=>canAdvance(b)&&(b.progress??0)>=2);const changed=tick(s);
- const upgrade=ready.find(b=>b.tier===2);
- if(upgrade)notify(upgrade.kind==='stall'?`Stall grew into a ${buildingName(upgrade).toLowerCase()}.`:'A home added a second storey.');
+ const ready=s.buildings.filter(b=>canAdvance(b)&&(b.progress??0)>=2),was=rankOf(s.renown);const changed=tick(s);
+ const upgrade=ready.find(b=>b.tier===2),now=rankOf(s.renown),cal=calendar(s.day);
+ if(now!==was){const opened=(Object.entries(unlockRank) as [Tool,number][]).filter(([,r])=>r===now).map(([k])=>specs[k].name);notify(now>was?`The temple is now a ${RANKS[now].name}${opened.length?` · ${opened.join(', ')} unlocked`:''}${now===1?' · patrons will visit':''}.`:`Renown fell: ${RANKS[now].name}.`);toolbar();}
+ else if(cal.festival&&cal.festivalDay===1)notify(`${cal.festival}: crowds are coming up the valley.`);
+ else if(upgrade)notify(upgrade.kind==='stall'?`Stall grew into a ${buildingName(upgrade).toLowerCase()}.`:'A home added a second storey.');
  save();if(changed)rebuild();else paint();preview(true);
 }
 function animate(t:number){requestAnimationFrame(animate);const dt=Math.min(t-lastT||0,100);lastT=t;if(document.hidden)return;if(panKeys.size&&!panel.open&&t-lastDraw>=33.33)panHeld(Math.min(t-lastDraw,50));const busy=!!down||dirty; const hz=busy?33.33:rate?66.66:111.11;const ambient=!test&&!panel.open&&(rate>0||q.pilgrims>0)&&document.hasFocus();if(ambient)clock+=dt;if(rate&&!panel.open){simClock+=dt*rate;if(simClock>6200){simClock-=6200;liveDay();}}if(dirty||t-lastDraw>=hz&&ambient){lastDraw=t;draw(clock/1000);}}
