@@ -155,3 +155,12 @@ test('patrons need renown and a cart-free inn on their route; seasons change the
   assert.ok(stats(fest).journeys.find(j=>j.type==='common').demand>stats(plain).journeys.find(j=>j.type==='common').demand);
   const winter=hillTemple();winter.day=100;winter.renown=40;assert.equal(stats(winter).visitors('patron'),0);
 });
+test('a road along the foot of a terrace leaves the pad edge and its wall intact',()=>{
+  const s=fresh(1748);s.coin=9999;
+  assert.ok(apply(s,'terrace',rectangle({x:-14,z:6},{x:-12,z:8})));
+  assert.ok(road(s,'road',-11,13,-11,5));
+  const top=s.terraces[key(-12,7)],grade=terrainGrader(s);
+  for(const t of [-.5,-.25,0,.25,.5])assert.equal(grade(-11.5,7+t,top,top),top);
+  const wall=terraceEdges(s,{x:-12,z:7},top).find(e=>e.dx===1);
+  assert.ok(wall&&wall.points.every(p=>top-grade(p.x,p.z,p.y,wall.level)>.5),'east face still needs a retaining wall');
+});

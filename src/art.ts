@@ -23,7 +23,7 @@ export function ground(s:State,grade=terrainGrader(s)){
  function vertex(i:number,j:number,level?:number){
   const k=j*stride+i,tag=level===undefined?'':`${k}:${level}`,old=level===undefined?base[k]:pads.get(tag)??-1;
   if(old!==-1)return old;
-  const x=i/div-36.5,z=j/div-36.5,y=grade(x,z,level??natural(x,z,s.seed)),n=noise(x*.52,z*.52,s.seed+6);
+  const x=i/div-36.5,z=j/div-36.5,y=grade(x,z,level??natural(x,z,s.seed),level),n=noise(x*.52,z*.52,s.seed+6);
   const slope=level!==undefined?0:Math.max(Math.abs(natural(x+.2,z,s.seed)-natural(x-.2,z,s.seed)),Math.abs(natural(x,z+.2,s.seed)-natural(x,z-.2,s.seed)));
   const at=v.length/3;if(level===undefined)base[k]=at;else pads.set(tag,at);v.push(x*C,y,z*C);
   col.setHex(y<.25?0xa6946f:y<1.17?0x969365:0x7d8859);
@@ -44,11 +44,11 @@ export function ground(s:State,grade=terrainGrader(s)){
  }
  const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));g.setAttribute('color',new T.Float32BufferAttribute(colors,3));g.setIndex(idx);g.computeVertexNormals();return new T.Mesh(g,terrainMat);
 }
-export function terrace(b:Batch,s:State,p:Pos,top:number,grade?:(x:number,z:number,y:number)=>number){
- for(const {dx,dz,points} of terraceEdges(s,p,top))for(let i=0;i<points.length-1;i++){
+export function terrace(b:Batch,s:State,p:Pos,top:number,grade?:(x:number,z:number,y:number,level?:number)=>number){
+ for(const {dx,dz,points,level} of terraceEdges(s,p,top))for(let i=0;i<points.length-1;i++){
   const a=points[i],c=points[i+1];
-  const lowA=grade?.(a.x,a.z,top)??top,lowC=grade?.(c.x,c.z,top)??top;
-  const farA=grade?.(a.x,a.z,a.y)??a.y,farC=grade?.(c.x,c.z,c.y)??c.y;
+  const lowA=grade?.(a.x,a.z,top,top)??top,lowC=grade?.(c.x,c.z,top,top)??top;
+  const farA=grade?.(a.x,a.z,a.y,level)??a.y,farC=grade?.(c.x,c.z,c.y,level)??c.y;
   // Clip the wall and its stone courses to the actual opposite edge, on cut AND fill sides.
   // The backing face runs uninterrupted from one surface to the other, including at corners.
   const at=(t:number,y:number,offset=0)=>[(a.x+(c.x-a.x)*t)*C+dx*offset,y,(a.z+(c.z-a.z)*t)*C+dz*offset];
@@ -57,10 +57,35 @@ export function terrace(b:Batch,s:State,p:Pos,top:number,grade?:(x:number,z:numb
   function face(lo:number,hi:number,fill:boolean){
    if(hi-lo<1e-6)return;
    const floor=(t:number)=>Math.min(near(t),adj(t)),ceil=(t:number)=>Math.max(near(t),adj(t));
-   b.quad(at(lo,floor(lo)),at(hi,floor(hi)),at(hi,ceil(hi)),at(lo,ceil(lo)),0x686956);
+   b.quad(at(lo,floor(lo)),at(hi,floor(hi)),at(hi,ceil(hi)),at(lo,ceil(lo)),0x4f5446);
    // Facade sits a hair into the lower surface, with the continuous backing visible at the joints.
    const offset=fill?.018:-.018,step=.38,start=Math.floor(Math.min(floor(lo),floor(hi))/step),end=Math.ceil(Math.max(ceil(lo),ceil(hi))/step);
    if(end-start>48)return; // Malformed imported heights still get the closed backing face.
+   const sign=Math.sign(offset),len=Math.hypot(c.x-a.x,c.z-a.z)*C;
+   // Each stone is a shallow chamfered block proud of the mortar bed, so the wall catches raking light.
+   function stoneBlock(u:number,v:number,l0:number,l1:number,h0:number,h1:number,color:number,shade:number,depth:number,moss:boolean){
+    const out=offset+sign*depth,bev=Math.min(.05,(h0-l0)*.3,(h1-l1)*.3),ct=Math.min(.05/len,(v-u)*.3);
+    const back=[at(u,l0,offset),at(v,l1,offset),at(v,h1,offset),at(u,h0,offset)];
+    if(bev<.012||ct*len<.012){b.quad(back[0],back[1],back[2],back[3],color,shade);return;}
+    const U=u+ct,V=v-ct,lerpY=(y0:number,y1:number,t:number)=>y0+(y1-y0)*(t-u)/(v-u);
+    const front=[at(U,lerpY(l0,l1,U)+bev,out),at(V,lerpY(l0,l1,V)+bev,out),at(V,lerpY(h0,h1,V)-bev,out),at(U,lerpY(h0,h1,U)-bev,out)];
+    b.quad(front[0],front[1],front[2],front[3],color,shade);
+    b.quad(back[3],back[2],front[2],front[3],moss?0x6f7d4f:color,shade*1.12); // top bevel catches sky light
+    b.quad(back[0],front[0],front[1],back[1],color,shade*.62);                   // underside stays in shadow
+    b.quad(back[0],back[3],front[3],front[0],color,shade*.84);
+    b.quad(back[1],front[1],front[2],back[2],color,shade*.84);
+   }
+   // Coping course: flat capstones overhanging the top of fill walls, where the top edge is the level pad.
+   if(fill&&Math.abs(near(lo)-near(hi))<1e-4&&near(lo)-Math.max(adj(lo),adj(hi))>.3){
+    const top=near(lo),n=Math.max(1,Math.round((hi-lo)*len/.62));
+    for(let k=0;k<n;k++){
+     const u=lo+(hi-lo)*k/n+.006,v=lo+(hi-lo)*(k+1)/n-.006,r=rand(p.x*29+i+k,p.z*31+k,s.seed+53),o=offset+sign*(.095+r*.02),y0=top-.17,y1=top+.035;
+     const f=[at(u,y0,o),at(v,y0,o),at(v,y1,o),at(u,y1,o)],k0=[at(u,y1,offset-sign*.2),at(v,y1,offset-sign*.2)];
+     b.quad(f[0],f[1],f[2],f[3],0x8a887a,.92+r*.16);b.quad(f[3],f[2],k0[1],k0[0],0x8f8d7d,1.08);
+     b.quad(at(u,y0,offset),at(v,y0,offset),f[1],f[0],0x8a887a,.55);
+     b.quad(at(u,y0,offset),f[0],f[3],at(u,y1,offset),0x8a887a,.8);b.quad(at(v,y0,offset),at(v,y1,offset),f[2],f[1],0x8a887a,.8);
+    }
+   }
    for(let row=start;row<end;row++){
     const bottom=row*step+.012,cap=(row+1)*step-.013;
     const knots=[lo,hi];for(const y of [bottom,cap]){for(const [u,v] of [[farA,farC],[lowA,lowC]]){const t=(y-u)/(v-u);if(t>lo&&t<hi)knots.push(t);}}
@@ -69,8 +94,8 @@ export function terrace(b:Batch,s:State,p:Pos,top:number,grade?:(x:number,z:numb
      const u=knots[j]+(j>0&&knots[j]===joint?.009:0),v=knots[j+1]-(knots[j+1]===joint?.009:0);if(v<=u)continue;
      const l0=Math.max(bottom,floor(u)),l1=Math.max(bottom,floor(v)),h0=Math.max(l0,Math.min(cap,ceil(u))),h1=Math.max(l1,Math.min(cap,ceil(v)));
      if(Math.max(h0-l0,h1-l1)<.005)continue;
-     const r=rand(p.x*11+i+(u>=joint?18:0),p.z*13+row,s.seed+7);
-     b.quad(at(u,l0,offset),at(v,l1,offset),at(v,h1,offset),at(u,h0,offset),rock[Math.floor(r*3)],.91+r*.19);
+     const r=rand(p.x*11+i+(u>=joint?18:0),p.z*13+row,s.seed+7),r2=rand(p.z*7+i,p.x*5+row,s.seed+31);
+     stoneBlock(u,v,l0,l1,h0,h1,rock[Math.floor(r*3)],.88+r*.22,.035+r2*.05,row===start&&r2<.45);
     }
    }
   }

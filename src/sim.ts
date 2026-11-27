@@ -63,7 +63,7 @@ export function terraceEdges(s:State,{x,z}:Pos,top:number){
    const t=i/TERRAIN_DIVISIONS-.5,X=x+dx*.5+dz*t,Z=z+dz*.5+dx*t;
    return {x:X,z:Z,y:neighbor??natural(X,Z,s.seed)};
   });
-  return [{dx,dz,points}];
+  return [{dx,dz,points,level:neighbor}];
  });
 }
 export function dims(kind:Tool,rot=0){const {w,d}=specs[kind];return rot%2?{w:d,d:w}:{w,d};}
@@ -130,8 +130,8 @@ export function roadSurface(s:State,a:Pos,b:Pos,t:number,ar=s.roads[key(a.x,a.z)
 // Cut only inside paved corridors, leaving the surrounding slope and terrace heights untouched.
 // Sample the cached road deck rather than making individual stair treads dodge the terrain.
 export function terrainGrader(s:State){
- type Link={dx:number,dz:number,lo:number,hi:number,deck:RoadPiece[]};
- type Site={x:number,z:number,y:number,w:number,d:number,pad:boolean,links:Link[]};
+ type Link={dx:number,dz:number,lo:number,hi:number,deck:RoadPiece[],level?:number};
+ type Site={x:number,z:number,y:number,w:number,d:number,pad:boolean,links:Link[],level?:number};
  const sites=new Map<string,Site>();
  for(const [k,r] of Object.entries(s.roads))if(r.kind!=='bridge'){
   const p=pos(k),y=roadTop(s,p,r),links:Link[]=[];
@@ -139,18 +139,21 @@ export function terrainGrader(s:State){
    const other=s.roads[key(a.x,a.z)],axis=a.x!==p.x?'x':'z';
    if(!other||(r.kind==='court'&&other.kind==='court')||Math.abs(roadTop(s,a,other)-y)>2.60)continue;
    if(other.kind==='bridge'?other.axis!==axis:(a.x<p.x||a.z<p.z))continue;
-   links.push({dx:a.x-p.x,dz:a.z-p.z,lo:roadReach(s,p,axis,r)-.03,hi:1-roadReach(s,a,axis,other)+.03,deck:roadProfile(s,p,a,r,other)});
+   links.push({level:s.terraces[key(a.x,a.z)],dx:a.x-p.x,dz:a.z-p.z,lo:roadReach(s,p,axis,r)-.03,hi:1-roadReach(s,a,axis,other)+.03,deck:roadProfile(s,p,a,r,other)});
   }
-  sites.set(k,{...p,y,w:roadPad(s,p,'x',r)/C,d:roadPad(s,p,'z',r)/C,pad:r.kind==='road',links});
+  sites.set(k,{...p,level:s.terraces[k],y,w:roadPad(s,p,'x',r)/C,d:roadPad(s,p,'z',r)/C,pad:r.kind==='road',links});
  }
  const feather=(over:number)=>Math.max(0,1-Math.max(0,over)/.31);
- return (x:number,z:number,y:number)=>{
+ // A terrace pad (level given) is only cut by roads on that same terrace, or by steps leading onto it;
+ // a road along the foot of a terrace must not drag the retaining wall's top edge down to the road.
+ return (x:number,z:number,y:number,level?:number)=>{
   const original=y,cx=Math.round(x),cz=Math.round(z);
   for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){
    const site=sites.get(key(cx+i,cz+j));if(!site)continue;
-   const dx=x-site.x,dz=z-site.z;
-   if(site.pad){const w=feather(Math.max(Math.abs(dx)-site.w-.04,Math.abs(dz)-site.d-.04));if(w)y=Math.min(y,lerp(original,site.y-.16,w));}
-   for(const {dx:u,dz:v,lo,hi,deck} of site.links){
+   const dx=x-site.x,dz=z-site.z,own=level===undefined||site.level===level;
+   if(site.pad&&own){const w=feather(Math.max(Math.abs(dx)-site.w-.04,Math.abs(dz)-site.d-.04));if(w)y=Math.min(y,lerp(original,site.y-.16,w));}
+   for(const {dx:u,dz:v,lo,hi,deck,level:to} of site.links){
+    if(!own&&to!==level)continue;
     const t=dx*u+dz*v,across=Math.abs(u?dz:dx);
     if(t<lo||t>hi)continue;
     const w=feather(across-.51);if(w)y=Math.min(y,lerp(original,sampleRoad(deck,t)-.23,w));
